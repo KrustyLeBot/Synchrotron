@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="updates" path="updates/" />
+    <cache-path name="exports" path="exports/" />
+    <!-- Lets the conflict screen open a file of a synced folder in another app. -->
+    <root-path name="root" path="/" />
+</paths>
