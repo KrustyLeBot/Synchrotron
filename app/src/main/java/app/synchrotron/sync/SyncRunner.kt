@@ -24,7 +24,12 @@ class SyncOptions(
     val resync: Boolean = false,
     /** The user confirmed a sync that exceeds the delete safeguard. */
     val force: Boolean = false,
+    /** The user confirmed that a deliberately emptied side must be mirrored: [WIPE_REMOTE] or [WIPE_LOCAL]. */
+    val wipe: Int = 0,
 )
+
+const val WIPE_REMOTE = 1 // the phone folder is empty: empty Proton too
+const val WIPE_LOCAL = 2 // the Proton folder is empty: empty the phone folder too
 
 class SyncRunner(private val context: Context) {
     private val engine = RcloneEngine.get(context)
@@ -90,6 +95,7 @@ class SyncRunner(private val context: Context) {
         engine.session {
             if (pair.remotePath.isNotEmpty()) engine.mkdir(pair.remotePath)
             val remote = "${RcloneEngine.REMOTE}:${pair.remotePath}"
+            if (options.wipe != 0) mirrorEmptiedSide(pair, remote, options.wipe)
             val group = "pair-${pair.id}"
             val result = when (pair.mode) {
                 SyncMode.BIDIRECTIONAL -> bisync(pair, remote, group, options, onProgress)
@@ -146,6 +152,24 @@ class SyncRunner(private val context: Context) {
         put("_filter", filterJson(pair))
     }, group, onProgress)
 
+    /**
+     * Bisync refuses to sync an emptied folder, even with --force. When the user explicitly confirmed it,
+     * empty the other side ourselves, then rebuild the (empty) baseline with the resync that follows.
+     */
+    private suspend fun mirrorEmptiedSide(pair: PairEntity, remote: String, wipe: Int) {
+        val localEmpty = File(pair.localPath).walkTopDown().none { it.isFile }
+        if (wipe == WIPE_REMOTE) {
+            check(localEmpty) { "Le dossier du téléphone n'est plus vide : suppression annulée" }
+            engine.rpc("operations/purge", JSONObject().put("fs", remote).put("remote", ""))
+            engine.mkdir(pair.remotePath)
+        } else {
+            check(engine.listEntries(remote, recurse = true).none { !it.isDir }) {
+                "Le dossier Proton n'est plus vide : suppression annulée"
+            }
+            File(pair.localPath).listFiles()?.forEach { it.deleteRecursively() }
+        }
+    }
+
     private fun writeFilters(pair: PairEntity): File {
         val dir = File(context.filesDir, "filters").apply { mkdirs() }
         return File(dir, "pair-${pair.id}.txt").apply {
@@ -158,12 +182,8 @@ class SyncRunner(private val context: Context) {
         return when {
             msg.contains("Safety abort", true) || msg.contains("too many deletes", true) ->
                 Outcome(SyncStatus.BLOCKED, "Trop de suppressions prévues : confirmation requise", 0, msg)
-            msg.contains("Empty current Path", true) -> Outcome(
-                SyncStatus.ERROR,
-                "Un des dossiers est entièrement vide : synchro refusée par sécurité, rien n'a été supprimé. " +
-                    "« Reconstruire la base » restaure les fichiers manquants depuis l'autre côté.",
-                0, msg,
-            )
+            msg.contains("Empty current Path1", true) -> Outcome(SyncStatus.BLOCKED, MSG_LOCAL_EMPTY, 0, msg)
+            msg.contains("Empty current Path2", true) -> Outcome(SyncStatus.BLOCKED, MSG_REMOTE_EMPTY, 0, msg)
             else -> Outcome(SyncStatus.ERROR, reason(msg), 0, msg)
         }
     }
@@ -171,6 +191,9 @@ class SyncRunner(private val context: Context) {
     companion object {
         private val ansi = Regex("\u001B\\[[;\\d]*m")
         private val builtinExcludes = listOf(".trashed-*", ".pending-*", ".thumbnails/")
+
+        const val MSG_LOCAL_EMPTY = "Le dossier du téléphone est entièrement vide."
+        const val MSG_REMOTE_EMPTY = "Le dossier Proton est entièrement vide."
 
         fun clean(s: String) = s.replace(ansi, "").take(8000)
 

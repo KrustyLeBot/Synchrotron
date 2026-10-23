@@ -53,6 +53,9 @@ import app.synchrotron.sync.ConflictFile
 import app.synchrotron.sync.ConflictResolver
 import app.synchrotron.sync.ConflictScanner
 import app.synchrotron.sync.Preview
+import app.synchrotron.sync.SyncRunner
+import app.synchrotron.sync.WIPE_LOCAL
+import app.synchrotron.sync.WIPE_REMOTE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,6 +76,7 @@ fun DetailScreen(vm: AppViewModel, pairId: Long, onEdit: (PairEntity) -> Unit, o
     var previewError by remember { mutableStateOf<String?>(null) }
     var previewLoading by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmWipe by remember { mutableStateOf(false) }
     var logOf by remember { mutableStateOf<HistoryEntity?>(null) }
 
     LaunchedEffect(p?.lastSyncAt, conflictTick) {
@@ -134,7 +138,26 @@ fun DetailScreen(vm: AppViewModel, pairId: Long, onEdit: (PairEntity) -> Unit, o
                 )
             }
 
-            if (p.lastStatus == SyncStatus.BLOCKED && running == null) {
+            val localEmpty = p.lastMessage.startsWith(SyncRunner.MSG_LOCAL_EMPTY)
+            val remoteEmpty = p.lastMessage.startsWith(SyncRunner.MSG_REMOTE_EMPTY)
+            if (p.lastStatus == SyncStatus.BLOCKED && running == null && (localEmpty || remoteEmpty)) {
+                Gap()
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(p.lastMessage, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Rien n'a été supprimé. Était-ce voulu ? Tu peux répercuter la suppression de l'autre côté, ou tout restaurer.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(onClick = { confirmWipe = true }) {
+                            Text(if (localEmpty) "Vider aussi Proton" else "Vider aussi le téléphone")
+                        }
+                        TextButton(onClick = { vm.syncNow(p.id, resync = true) }) {
+                            Text(if (localEmpty) "Restaurer depuis Proton" else "Restaurer depuis le téléphone")
+                        }
+                    }
+                }
+            } else if (p.lastStatus == SyncStatus.BLOCKED && running == null) {
                 Gap()
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                     Column(Modifier.padding(16.dp)) {
@@ -178,6 +201,26 @@ fun DetailScreen(vm: AppViewModel, pairId: Long, onEdit: (PairEntity) -> Unit, o
             text = { Text("Les fichiers restent intacts sur le téléphone et sur Proton Drive ; seule la synchronisation s'arrête.") },
             confirmButton = { TextButton(onClick = { vm.deletePair(p.id); confirmDelete = false; onBack() }) { Text("Supprimer") } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Annuler") } },
+        )
+    }
+    if (confirmWipe && p != null) {
+        val localEmpty = p.lastMessage.startsWith(SyncRunner.MSG_LOCAL_EMPTY)
+        AlertDialog(
+            onDismissRequest = { confirmWipe = false },
+            title = { Text(if (localEmpty) "Vider Proton aussi ?" else "Vider le téléphone aussi ?") },
+            text = {
+                Text(
+                    if (localEmpty) "Tous les fichiers de /${p.remotePath} sur Proton Drive seront supprimés, comme sur le téléphone."
+                    else "Tous les fichiers de ${p.localPath} seront supprimés du téléphone, comme sur Proton Drive."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmWipe = false
+                    vm.syncNow(p.id, resync = true, wipe = if (localEmpty) WIPE_REMOTE else WIPE_LOCAL)
+                }) { Text("Supprimer") }
+            },
+            dismissButton = { TextButton(onClick = { confirmWipe = false }) { Text("Annuler") } },
         )
     }
     logOf?.let { h ->

@@ -47,13 +47,13 @@ object Scheduler {
     }
 
     /** Immediate sync, whatever the Wi-Fi / charging settings (the user asked for it). */
-    fun syncNow(context: Context, pairId: Long, resync: Boolean = false, force: Boolean = false) {
+    fun syncNow(context: Context, pairId: Long, resync: Boolean = false, force: Boolean = false, wipe: Int = 0) {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-            .setInputData(workDataOf(SyncWorker.KEY_PAIR to pairId, SyncWorker.KEY_RESYNC to resync, SyncWorker.KEY_FORCE to force))
+            .setInputData(workDataOf(SyncWorker.KEY_PAIR to pairId, SyncWorker.KEY_RESYNC to resync, SyncWorker.KEY_FORCE to force, SyncWorker.KEY_WIPE to wipe))
             .build()
-        val policy = if (resync || force) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
+        val policy = if (resync || force || wipe != 0) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
         WorkManager.getInstance(context).enqueueUniqueWork(nowName(pairId), policy, request)
     }
 }

@@ -122,8 +122,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun syncNow(id: Long, resync: Boolean = false, force: Boolean = false) =
-        Scheduler.syncNow(getApplication(), id, resync, force)
+    fun syncNow(id: Long, resync: Boolean = false, force: Boolean = false, wipe: Int = 0) =
+        Scheduler.syncNow(getApplication(), id, resync, force, wipe)
 
     fun cancelSync(id: Long) = SyncRegistry.cancel(id)
 
