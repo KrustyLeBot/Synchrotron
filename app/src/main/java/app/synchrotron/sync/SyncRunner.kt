@@ -170,7 +170,7 @@ class SyncRunner(private val context: Context) {
 
         /** Bisync lost its baseline (crash, changed filters, first run failed): a resync rebuilds it without deleting. */
         fun needsResync(msg: String) = Regex(
-            "(?i)(must run --resync|cannot find prior|run --resync to recover|resync is required|prior .{0,20}listing)"
+            "(?i)(must run --resync|cannot find prior|run --resync to recover|resync is required|prior .{0,20}listing|empty prior)"
         ).containsMatchIn(msg)
 
         /** First meaningful ERROR line of rclone's output, without timestamp and noise. */
