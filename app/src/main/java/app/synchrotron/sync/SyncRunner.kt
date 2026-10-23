@@ -158,6 +158,12 @@ class SyncRunner(private val context: Context) {
         return when {
             msg.contains("Safety abort", true) || msg.contains("too many deletes", true) ->
                 Outcome(SyncStatus.BLOCKED, "Trop de suppressions prévues : confirmation requise", 0, msg)
+            msg.contains("Empty current Path", true) -> Outcome(
+                SyncStatus.ERROR,
+                "Un des dossiers est entièrement vide : synchro refusée par sécurité, rien n'a été supprimé. " +
+                    "« Reconstruire la base » restaure les fichiers manquants depuis l'autre côté.",
+                0, msg,
+            )
             else -> Outcome(SyncStatus.ERROR, reason(msg), 0, msg)
         }
     }
