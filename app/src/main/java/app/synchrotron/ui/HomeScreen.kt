@@ -1,5 +1,6 @@
 package app.synchrotron.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,11 +10,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -63,7 +67,15 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Synchrotron", fontWeight = FontWeight.Bold) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.foundation.Image(
+                            androidx.compose.ui.res.painterResource(app.synchrotron.R.drawable.ic_logo), null,
+                            Modifier.size(32.dp),
+                        )
+                        Text("  Synchrotron", fontWeight = FontWeight.Bold)
+                    }
+                },
                 actions = { IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Réglages") } },
             )
         },
@@ -76,6 +88,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (pairs.isNotEmpty()) item { SummaryCard(pairs, progress.size) }
             if (!loggedIn) item {
                 BannerCard(
                     icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
@@ -122,7 +135,10 @@ private fun BannerCard(icon: @Composable () -> Unit, title: String, text: String
 @Composable
 private fun EmptyState() {
     Column(Modifier.fillMaxWidth().padding(vertical = 64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Sync, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 16.dp))
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(app.synchrotron.R.drawable.ic_logo), null,
+            Modifier.size(96.dp).padding(bottom = 16.dp),
+        )
         Text("Aucune paire pour l'instant", style = MaterialTheme.typography.titleMedium)
         Text(
             "Une paire relie un dossier du téléphone à un dossier Proton Drive.",
@@ -142,6 +158,8 @@ private fun PairCard(pair: PairEntity, progress: Progress?, onClick: () -> Unit,
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusIcon(if (running) SyncStatus.RUNNING else pair.lastStatus)
+                androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(pair.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
@@ -176,6 +194,45 @@ private fun PairCard(pair: PairEntity, progress: Progress?, onClick: () -> Unit,
                     Text(pair.lastMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StatusIcon(status: SyncStatus) {
+    val color = statusColor(status)
+    val icon = when (status) {
+        SyncStatus.OK -> Icons.Default.CheckCircle
+        SyncStatus.ERROR -> Icons.Default.ErrorOutline
+        SyncStatus.CONFLICTS, SyncStatus.BLOCKED -> Icons.Default.Warning
+        else -> Icons.Default.Sync
+    }
+    Box(
+        Modifier.size(44.dp).background(color.copy(alpha = 0.14f), androidx.compose.foundation.shape.CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, null, tint = color) }
+}
+
+@Composable
+private fun SummaryCard(pairs: List<PairEntity>, running: Int) {
+    val problems = pairs.count { it.lastStatus == SyncStatus.ERROR || it.lastStatus == SyncStatus.BLOCKED || it.lastStatus == SyncStatus.CONFLICTS }
+    val last = pairs.maxOf { it.lastSyncAt }
+    val title = when {
+        running > 0 -> "Synchronisation en cours…"
+        problems > 0 -> "$problems paire${if (problems > 1) "s" else ""} à vérifier"
+        pairs.any { it.lastStatus == SyncStatus.NEVER } -> "Prêt à synchroniser"
+        else -> "Tout est à jour"
+    }
+    val brush = androidx.compose.ui.graphics.Brush.linearGradient(
+        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary),
+    )
+    Box(Modifier.fillMaxWidth().background(brush, MaterialTheme.shapes.large).padding(20.dp)) {
+        Column {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+            Text(
+                "${pairs.size} paire${if (pairs.size > 1) "s" else ""}" + if (last > 0) "  ·  dernière synchro ${relativeTime(last)}" else "",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+            )
         }
     }
 }

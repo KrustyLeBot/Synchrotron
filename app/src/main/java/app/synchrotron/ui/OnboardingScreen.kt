@@ -62,7 +62,9 @@ fun OnboardingScreen(vm: AppViewModel, onDone: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             UpdateCard(vm) // updates must be possible before any login
-            Icon(Icons.Default.Sync, null, tint = MaterialTheme.colorScheme.primary)
+            androidx.compose.foundation.Image(
+                androidx.compose.ui.res.painterResource(app.synchrotron.R.drawable.ic_logo), null, Modifier.size(88.dp),
+            )
             Text("Synchrotron", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
             when (step) {
                 0 -> {
