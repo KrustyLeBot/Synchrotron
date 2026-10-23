@@ -202,7 +202,10 @@ class RcloneEngine private constructor(private val context: Context) {
                     )
                     runCatching { rpc("core/stats-delete", JSONObject().put("group", group)) }
                     if (!status.optBoolean("success")) {
-                        throw RcloneException(500, status.optString("error").ifBlank { "Échec de la synchronisation" })
+                        // The real reason is in the captured output; "error" alone is just "bisync aborted".
+                        val detail = result.output.takeIf { it.isNotBlank() }
+                        val summary = status.optString("error").ifBlank { "Échec de la synchronisation" }
+                        throw RcloneException(500, if (detail != null) "$summary\n$detail" else summary)
                     }
                     return result
                 }

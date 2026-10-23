@@ -132,7 +132,7 @@ class SyncRunner(private val context: Context) {
             attempt(options.resync)
         } catch (e: RcloneException) {
             // Changed filters, interrupted run or lost listings: a resync only merges, it never deletes.
-            if (!options.resync && e.message.orEmpty().contains("--resync")) attempt(true) else throw e
+            if (!options.resync && needsResync(clean(e.message.orEmpty()))) attempt(true) else throw e
         }
     }
 
@@ -155,11 +155,10 @@ class SyncRunner(private val context: Context) {
 
     private fun classify(raw: String): Outcome {
         val msg = clean(raw)
-        val last = msg.lines().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
         return when {
             msg.contains("Safety abort", true) || msg.contains("too many deletes", true) ->
-                Outcome(SyncStatus.BLOCKED, "Trop de suppressions prévues : confirmation requise ($last)", 0, msg)
-            else -> Outcome(SyncStatus.ERROR, last.ifBlank { "Erreur inconnue" }.take(300), 0, msg)
+                Outcome(SyncStatus.BLOCKED, "Trop de suppressions prévues : confirmation requise", 0, msg)
+            else -> Outcome(SyncStatus.ERROR, reason(msg), 0, msg)
         }
     }
 
@@ -168,6 +167,20 @@ class SyncRunner(private val context: Context) {
         private val builtinExcludes = listOf(".trashed-*", ".pending-*", ".thumbnails/")
 
         fun clean(s: String) = s.replace(ansi, "").take(8000)
+
+        /** Bisync lost its baseline (crash, changed filters, first run failed): a resync rebuilds it without deleting. */
+        fun needsResync(msg: String) = Regex(
+            "(?i)(must run --resync|cannot find prior|run --resync to recover|resync is required|prior .{0,20}listing)"
+        ).containsMatchIn(msg)
+
+        /** First meaningful ERROR line of rclone's output, without timestamp and noise. */
+        fun reason(msg: String): String {
+            val lines = msg.lines().map { it.trim() }.filter { it.isNotEmpty() }
+            val errors = lines.filter { " ERROR " in it || it.startsWith("ERROR") || it.contains("critical error", true) }
+                .map { it.substringAfter("ERROR :", it).trim() }
+                .filter { !it.contains("retryable", true) && !it.startsWith("Tip", true) }
+            return (errors.firstOrNull() ?: lines.lastOrNull { !it.contains("retryable", true) } ?: "Erreur inconnue").take(300)
+        }
 
         fun patterns(pair: PairEntity): List<String> =
             builtinExcludes + pair.exclusions.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }

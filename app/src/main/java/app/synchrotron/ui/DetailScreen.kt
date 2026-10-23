@@ -124,6 +124,16 @@ fun DetailScreen(vm: AppViewModel, pairId: Long, onEdit: (PairEntity) -> Unit, o
                 Button(onClick = { vm.syncNow(p.id) }, modifier = Modifier.fillMaxWidth()) { Text("Synchroniser maintenant") }
             }
 
+            if (p.lastStatus == SyncStatus.ERROR && running == null && p.mode == SyncMode.BIDIRECTIONAL && p.initialized) {
+                OutlinedButton(onClick = { vm.syncNow(p.id, resync = true) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Text("Reconstruire la base de synchro")
+                }
+                Text(
+                    "Compare à nouveau les deux dossiers sans rien supprimer. À essayer si l'erreur persiste.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             if (p.lastStatus == SyncStatus.BLOCKED && running == null) {
                 Gap()
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
