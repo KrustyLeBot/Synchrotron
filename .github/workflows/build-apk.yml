@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main, ccr-5afdc274-j9kcqd]
+    branches: [main]
     paths-ignore: ['**.md']
   pull_request:
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     # The release key only exists in the `release` environment, restricted to main.
     # Pull requests never get it, so they can never produce a signed APK.
-    environment: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && 'release' || 'unsigned' }}
+    environment: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && 'release' || null }}
     permissions:
       contents: write
     steps:
@@ -59,7 +59,11 @@ jobs:
             echo "SYNCHROTRON_KEYSTORE=$RUNNER_TEMP/synchrotron.jks" >> "$GITHUB_ENV"
           else
             echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::No release key available: building with the debug key, not publishing."
+            if [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$GITHUB_EVENT_NAME" = "push" ]; then
+              echo "::error::SYNCHROTRON_KEYSTORE_BASE64 is missing in the 'release' environment: refusing to build an unsigned release."
+              exit 1
+            fi
+            echo "::warning::No release key (pull request): debug-signed build, never published."
           fi
 
       - name: Build APK
