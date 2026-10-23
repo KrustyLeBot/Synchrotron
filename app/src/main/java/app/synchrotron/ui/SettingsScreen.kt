@@ -36,7 +36,8 @@ import androidx.core.content.FileProvider
 import app.synchrotron.AppViewModel
 import app.synchrotron.BuildConfig
 import app.synchrotron.UpdateState
-import app.synchrotron.update.Updater
+import app.synchrotron.security.BiometricLock
+import app.synchrotron.security.Prefs
 import kotlinx.coroutines.launch
 
 @Composable
@@ -45,10 +46,7 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
     val scope = rememberCoroutineScope()
     val email by vm.email.collectAsState()
     val loggedIn by vm.loggedIn.collectAsState()
-    val update by vm.update.collectAsState()
-    val progress by vm.progress.collectAsState()
     var confirmLogout by remember { mutableStateOf(false) }
-    var syncWarning by remember { mutableStateOf(false) }
 
     Scaffold(topBar = { BackTopBar("Réglages", onBack) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
@@ -64,31 +62,28 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
             }
 
             SectionTitle("Mises à jour")
+            UpdateCard(vm, alwaysVisible = true)
+
+            SectionTitle("Sécurité")
             SettingsCard {
-                Text("Build ${BuildConfig.VERSION_CODE} · ${BuildConfig.VERSION_NAME}", fontWeight = FontWeight.SemiBold)
-                when (val u = update) {
-                    UpdateState.Idle -> Unit
-                    UpdateState.Checking -> LinearProgressIndicator(Modifier.fillMaxWidth())
-                    UpdateState.UpToDate -> Text("Tu as la dernière version.", style = MaterialTheme.typography.bodySmall)
-                    is UpdateState.Failed -> Text(u.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    is UpdateState.Available -> {
-                        Text("Build ${u.info.build} disponible (${formatBytes(u.info.sizeBytes)})")
-                        Button(onClick = { vm.downloadUpdate(u.info) }) { Text("Télécharger") }
+                val activity = context as androidx.fragment.app.FragmentActivity
+                var enabled by remember { mutableStateOf(Prefs.biometricLock(context)) }
+                val available = BiometricLock.available(context)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Verrouillage biométrique", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (available) "Empreinte, visage ou code de l'appareil à l'ouverture."
+                            else "Configure d'abord un verrouillage d'écran sur le téléphone.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                    is UpdateState.Downloading -> {
-                        Text("Téléchargement…")
-                        LinearProgressIndicator(progress = { u.progress }, modifier = Modifier.fillMaxWidth())
-                    }
-                    is UpdateState.Ready -> Button(onClick = {
-                        when {
-                            progress.isNotEmpty() -> syncWarning = true // never install in the middle of a sync
-                            !Updater.canInstall(context) -> Updater.openInstallPermission(context)
-                            else -> Updater.install(context, u.apk)
+                    androidx.compose.material3.Switch(checked = enabled, enabled = available, onCheckedChange = { want ->
+                        // Prove it works (and that it is really the owner) before changing the setting.
+                        BiometricLock.authenticate(activity, "Confirmer") { ok ->
+                            if (ok) { Prefs.setBiometricLock(context, want); enabled = want; (activity as? app.synchrotron.MainActivity)?.applySecureFlag() }
                         }
-                    }) { Text("Installer le build ${u.info.build}") }
-                }
-                if (update !is UpdateState.Downloading) {
-                    OutlinedButton(onClick = { vm.checkUpdate() }) { Text("Vérifier maintenant") }
+                    })
                 }
             }
 
@@ -143,18 +138,10 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
             dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Annuler") } },
         )
     }
-    if (syncWarning) {
-        AlertDialog(
-            onDismissRequest = { syncWarning = false },
-            title = { Text("Synchro en cours") },
-            text = { Text("Attends la fin de la synchronisation avant d'installer, ou annule-la depuis l'accueil.") },
-            confirmButton = { TextButton(onClick = { syncWarning = false }) { Text("OK") } },
-        )
-    }
 }
 
 @Composable
-private fun SettingsCard(content: @Composable () -> Unit) {
+fun SettingsCard(content: @Composable () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) { content() }
     }

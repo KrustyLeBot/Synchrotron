@@ -61,6 +61,7 @@ fun OnboardingScreen(vm: AppViewModel, onDone: () -> Unit) {
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            UpdateCard(vm) // updates must be possible before any login
             Icon(Icons.Default.Sync, null, tint = MaterialTheme.colorScheme.primary)
             Text("Synchrotron", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
             when (step) {

@@ -2,7 +2,7 @@ package app.synchrotron
 
 import android.os.Bundle
 import android.os.Environment
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -24,24 +24,65 @@ import app.synchrotron.ui.OnboardingScreen
 import app.synchrotron.ui.SettingsScreen
 import app.synchrotron.ui.SynchrotronTheme
 import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.compose.foundation.layout.fillMaxSize
+import app.synchrotron.security.BiometricLock
+import app.synchrotron.security.Prefs
+import app.synchrotron.ui.LockScreen
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val vm: AppViewModel by viewModels()
     private val openPair = MutableStateFlow<Long?>(null)
+    private val locked = MutableStateFlow(false)
+    private var stoppedAt = 0L // 0 = cold start
+    private var prompting = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         openPair.value = intent?.getLongExtra(EXTRA_PAIR_ID, -1L)?.takeIf { it >= 0 }
         setContent {
-            SynchrotronTheme { App(vm, openPair) }
+            SynchrotronTheme {
+                val isLocked by locked.collectAsState()
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    App(vm, openPair)
+                    if (isLocked) LockScreen(onUnlock = ::unlock)
+                }
+            }
         }
+        applySecureFlag()
         vm.checkUpdate()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         openPair.value = intent.getLongExtra(EXTRA_PAIR_ID, -1L).takeIf { it >= 0 }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val grace = 30_000L
+        if (Prefs.biometricLock(this) && (stoppedAt == 0L || System.currentTimeMillis() - stoppedAt > grace)) locked.value = true
+        if (locked.value) unlock()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        stoppedAt = System.currentTimeMillis()
+    }
+
+    private fun unlock() {
+        if (prompting) return
+        prompting = true
+        BiometricLock.authenticate(this) { ok ->
+            prompting = false
+            if (ok) locked.value = false
+        }
+    }
+
+    /** With the lock on, the app is hidden from screenshots and the recent-apps thumbnail. */
+    fun applySecureFlag() {
+        if (Prefs.biometricLock(this)) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
     }
 
     override fun onResume() {

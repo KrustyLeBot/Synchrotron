@@ -3,7 +3,9 @@ package app.synchrotron.integration
 import android.content.Intent
 import android.os.Bundle
 import android.os.Environment
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
+import app.synchrotron.security.BiometricLock
+import app.synchrotron.security.Prefs
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,9 +41,17 @@ import java.io.File
  *
  * Extras: `local_path` (absolute, inside shared storage), `app_name`, optional `remote_path`.
  */
-class RegisterFolderActivity : ComponentActivity() {
+class RegisterFolderActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Prefs.biometricLock(this)) {
+            BiometricLock.authenticate(this) { ok -> if (ok) render() else finish() }
+        } else {
+            render()
+        }
+    }
+
+    private fun render() {
         val appName = intent.getStringExtra("app_name")?.trim()?.take(40)?.takeIf { it.isNotEmpty() }
         val root = Environment.getExternalStorageDirectory().canonicalFile
         val local = intent.getStringExtra("local_path")?.let { runCatching { File(it).canonicalFile }.getOrNull() }
