@@ -88,6 +88,9 @@ class RcloneEngine private constructor(private val context: Context) {
     private suspend fun openSession(values: Map<String, String>) {
         writeConf(values)
         rpc("config/setpath", JSONObject().put("path", confFile.absolutePath))
+        // rclone caches filesystems (and Proton's folder-id cache) for the whole process: a folder deleted or
+        // recreated by an earlier session would otherwise keep answering "directory not found".
+        runCatching { rpc("fs/cache-clear") }
     }
 
     private fun writeConf(values: Map<String, String>) {

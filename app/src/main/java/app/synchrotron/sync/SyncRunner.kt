@@ -160,8 +160,11 @@ class SyncRunner(private val context: Context) {
         val localEmpty = File(pair.localPath).walkTopDown().none { it.isFile }
         if (wipe == WIPE_REMOTE) {
             check(localEmpty) { "Le dossier du téléphone n'est plus vide : suppression annulée" }
-            engine.rpc("operations/purge", JSONObject().put("fs", remote).put("remote", ""))
-            engine.mkdir(pair.remotePath)
+            // Empty the folder but keep the folder itself: Proton's folder cache dislikes deleting the root of a pair.
+            engine.listEntries(remote, recurse = false).forEach { e ->
+                if (e.isDir) engine.rpc("operations/purge", JSONObject().put("fs", remote).put("remote", e.path))
+                else engine.rpc("operations/deletefile", JSONObject().put("fs", remote).put("remote", e.path))
+            }
         } else {
             check(engine.listEntries(remote, recurse = true).none { !it.isDir }) {
                 "Le dossier Proton n'est plus vide : suppression annulée"
