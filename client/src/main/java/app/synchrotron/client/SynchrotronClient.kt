@@ -150,8 +150,9 @@ object SynchrotronClient {
         val prefs = app.getSharedPreferences("synchrotron_client", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         if (now - prefs.getLong("last_$localPath", 0) < COOLDOWN_MS) { skip(SkipReason.COOLDOWN); return cancel }
-        val cm = app.getSystemService(ConnectivityManager::class.java)
-        if (cm.activeNetwork == null) { skip(SkipReason.NETWORK); return cancel }
+        // Needs ACCESS_NETWORK_STATE; without it assume we are online rather than crash.
+        val offline = runCatching { app.getSystemService(ConnectivityManager::class.java).activeNetwork == null }.getOrDefault(false)
+        if (offline) { skip(SkipReason.NETWORK); return cancel }
 
         var pairId = -1L
         val receiver = object : BroadcastReceiver() {
