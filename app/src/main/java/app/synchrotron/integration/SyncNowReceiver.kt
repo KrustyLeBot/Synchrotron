@@ -51,7 +51,7 @@ class SyncNowReceiver : BroadcastReceiver() {
                 }
             } finally {
                 pending.resultCode = code
-                pending.resultExtras = Bundle().apply { if (pairId >= 0) putLong("pair_id", pairId) }
+                pending.setResultExtras(Bundle().apply { if (pairId >= 0) putLong("pair_id", pairId) })
                 pending.finish()
             }
         }
