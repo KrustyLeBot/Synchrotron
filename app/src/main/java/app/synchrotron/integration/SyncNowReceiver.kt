@@ -33,7 +33,7 @@ class SyncNowReceiver : BroadcastReceiver() {
             try {
                 val dao = AppDb.get(app).pairs()
                 val id = intent.getLongExtra("pair_id", -1L)
-                val pair = if (id >= 0) dao.get(id) else intent.getStringExtra("local_path")?.let { dao.byLocalPath(it) }
+                val pair = if (id >= 0) dao.get(id) else intent.getStringExtra("local_path")?.let { dao.byLocalPath(runCatching { java.io.File(it).canonicalPath }.getOrDefault(it)) }
                 code = when {
                     pair == null -> RESULT_NOT_REGISTERED
                     !RcloneEngine.get(app).hasSession -> RESULT_NOT_LOGGED_IN
