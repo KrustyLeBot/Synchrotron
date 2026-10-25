@@ -11,6 +11,7 @@ import android.os.Messenger
 import android.os.RemoteException
 import app.synchrotron.sync.SyncExecutor
 import app.synchrotron.sync.SyncRegistry
+import app.synchrotron.sync.WatchService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +38,12 @@ class SyncService : Service() {
         true
     })
 
-    override fun onBind(intent: Intent?): IBinder = messenger.binder
+    override fun onBind(intent: Intent?): IBinder {
+        // Bound by an app on screen, Synchrotron may start its folder watcher now; it is a foreground
+        // service, so the process (and its open Proton connection) then stays alive for the next syncs.
+        WatchService.refresh(applicationContext)
+        return messenger.binder
+    }
 
     private fun handleSync(reply: Messenger?, localPath: String?, pairId: Long) {
         if (reply == null) return

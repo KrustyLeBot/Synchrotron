@@ -112,9 +112,10 @@ class RcloneEngine private constructor(private val context: Context) {
     }
 
     private fun writeConf(values: Map<String, String>) {
+        // Proton's metadata cache stays on (the default): without it every listed file costs one API call per
+        // parent folder to rebuild its keys. It does not hide changes made elsewhere: folder contents are
+        // always fetched from Proton, only folder keys and metadata are kept.
         val sb = StringBuilder("[$REMOTE]\ntype = protondrive\n")
-        // Remotes stay open across syncs: Proton's metadata cache would then hide changes made on the PC.
-        sb.append("enable_caching = false\n")
         values.forEach { (k, v) -> if (k != "type") sb.append(k).append(" = ").append(v).append('\n') }
         confFile.writeText(sb.toString())
         confFile.setReadable(false, false); confFile.setReadable(true, true)
@@ -156,7 +157,7 @@ class RcloneEngine private constructor(private val context: Context) {
     suspend fun login(email: String, password: String, twoFa: String, mailboxPassword: String) = sessionLock.withLock {
         _busy.value = true
         try {
-            val parameters = JSONObject().put("username", email).put("password", password).put("enable_caching", false)
+            val parameters = JSONObject().put("username", email).put("password", password)
             if (twoFa.isNotBlank()) parameters.put("2fa", twoFa.trim())
             if (mailboxPassword.isNotBlank()) parameters.put("mailbox_password", mailboxPassword)
             confFile.delete()
