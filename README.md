@@ -21,6 +21,14 @@ Bidirectional sync between folders on your Android phone and Proton Drive.
 | `synchrotron-client` library for other apps | `client/` |
 | CI: build `librclone.aar`, test, sign, publish `latest` | `.github/workflows/build-apk.yml` |
 
+### Speed
+- rclone keeps each opened remote (the Proton client with its unlocked keys) for the life of the process,
+  so only the first sync after a process start pays the Proton login (Proton's metadata cache is off so
+  changes made on other devices are always seen; remotes are dropped when Proton rotates the tokens).
+- Apps reach Synchrotron through the bound `SyncService`; the folder watcher runs syncs in its foreground
+  service. WorkManager (which may delay jobs of a rarely opened app) is only used for periodic and UI syncs.
+- Each sync log starts with the time spent in every phase (start, queue, engine, Proton, sync).
+
 ### Session & security
 - The Proton password is used once to log in and **never stored**. The resulting session tokens are kept in an
   AES-256-GCM blob whose key lives in the Android Keystore (`ConfigVault`).
@@ -31,7 +39,8 @@ Bidirectional sync between folders on your Android phone and Proton Drive.
 | Intent | Extras | Effect |
 |---|---|---|
 | `app.synchrotron.action.REGISTER_FOLDER` (activity) | `local_path`, `app_name`, `remote_path?` | Shows a confirmation, then creates a pair. Never silent. |
-| `app.synchrotron.action.SYNC_NOW` (broadcast) | `pair_id` or `local_path` | Syncs an **existing** pair. Cannot create anything. |
+| `app.synchrotron.action.BIND_SYNC` (bound service, Messenger) | `local_path` in `MSG_SYNC` | Fast path used by `syncOnOpen`: syncs an **existing** pair at once in Synchrotron's process (kept at the caller's priority while bound), answers `MSG_ANSWER` then `MSG_FINISHED`. |
+| `app.synchrotron.action.SYNC_NOW` (broadcast) | `pair_id` or `local_path` | Syncs an **existing** pair through WorkManager. Cannot create anything. |
 | `app.synchrotron.action.SYNC_FINISHED` (broadcast) | `pair_id`, `status`, `changes` (+`local_path` for the requesting app) | Sent after each sync. |
 
 ```kotlin
