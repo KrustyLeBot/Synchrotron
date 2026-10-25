@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import app.synchrotron.MainActivity
 import app.synchrotron.data.AppDb
+import app.synchrotron.data.ConflictPolicy
 import app.synchrotron.data.PairEntity
 import app.synchrotron.rclone.RcloneEngine
 import app.synchrotron.sync.Scheduler
@@ -58,6 +59,7 @@ class RegisterFolderActivity : FragmentActivity() {
         val valid = local != null && local != root && local.path.startsWith(root.path + "/")
         val remote = sanitizeRemote(intent.getStringExtra("remote_path"), appName ?: local?.name ?: "App")
         val caller = referrer?.takeIf { it.scheme == "android-app" }?.host ?: callingActivity?.packageName
+        val defaults = Defaults.from(intent)
         val loggedIn = RcloneEngine.get(this).hasSession
 
         setContent {
@@ -70,7 +72,7 @@ class RegisterFolderActivity : FragmentActivity() {
                                 Text("Le dossier doit se trouver dans le stockage partagé du téléphone.")
                                 Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth()) { Text("Fermer") }
                             } else {
-                                Request(appName, local!!, remote, loggedIn, onConfirm = { confirm(appName, local, remote, caller) }, onCancel = {
+                                Request(appName, local!!, remote, defaults, loggedIn, onConfirm = { confirm(appName, local, remote, defaults, caller) }, onCancel = {
                                     setResult(RESULT_CANCELED); finish()
                                 })
                             }
@@ -82,12 +84,14 @@ class RegisterFolderActivity : FragmentActivity() {
     }
 
     @Composable
-    private fun Request(appName: String, local: File, remote: String, loggedIn: Boolean, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    private fun Request(appName: String, local: File, remote: String, defaults: Defaults, loggedIn: Boolean, onConfirm: () -> Unit, onCancel: () -> Unit) {
         Text("$appName veut synchroniser un dossier", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Text("Téléphone", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(local.path)
         Text("Proton Drive", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("/$remote")
+        Text("Réglages proposés", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(defaults.summary())
         if (!loggedIn) {
             Text("Connecte-toi d'abord à Proton dans Synchrotron.", color = MaterialTheme.colorScheme.error)
             Button(onClick = { startActivity(Intent(this@RegisterFolderActivity, MainActivity::class.java)); finish() }, modifier = Modifier.fillMaxWidth()) {
@@ -101,14 +105,18 @@ class RegisterFolderActivity : FragmentActivity() {
         }
     }
 
-    private fun confirm(appName: String, local: File, remote: String, caller: String?) {
+    private fun confirm(appName: String, local: File, remote: String, defaults: Defaults, caller: String?) {
         val ctx = applicationContext
         lifecycleScope.launch {
             val dao = AppDb.get(ctx).pairs()
             val existing = dao.byLocalPath(local.path)
             val id = existing?.id ?: run {
                 local.mkdirs()
-                val pair = PairEntity(name = appName, localPath = local.path, remotePath = remote, requestedByPackage = caller)
+                val pair = PairEntity(
+                    name = appName, localPath = local.path, remotePath = remote, requestedByPackage = caller,
+                    conflictPolicy = defaults.conflictPolicy, intervalMinutes = defaults.intervalMinutes,
+                    watchChanges = defaults.watchChanges, exclusions = defaults.exclusions,
+                )
                 dao.insert(pair).also { Scheduler.schedule(ctx, pair.copy(id = it)) }
             }
             setResult(RESULT_OK, Intent().putExtra("pair_id", id))
@@ -118,6 +126,33 @@ class RegisterFolderActivity : FragmentActivity() {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             )
             finish()
+        }
+    }
+
+    /** Optional suggestions from the requesting app; invalid values fall back to Synchrotron's defaults. */
+    private class Defaults(
+        val conflictPolicy: ConflictPolicy, val intervalMinutes: Int, val watchChanges: Boolean, val exclusions: String,
+    ) {
+        fun summary() = buildString {
+            append(if (intervalMinutes == 0) "Synchro manuelle" else "Synchro toutes les ${intervalMinutes.toLabel()}")
+            if (watchChanges) append(" + dès qu'un fichier change")
+            append("\nConflits : ${conflictPolicy.label.lowercase()}")
+            if (exclusions.isNotBlank()) append("\nExclus : ${exclusions.lines().filter { it.isNotBlank() }.joinToString(", ")}")
+        }
+
+        private fun Int.toLabel() = if (this % 60 == 0) "${this / 60} h" else "$this min"
+
+        companion object {
+            private val intervals = setOf(0, 15, 30, 60, 180, 360, 720, 1440)
+
+            fun from(intent: Intent): Defaults = Defaults(
+                conflictPolicy = runCatching { ConflictPolicy.valueOf(intent.getStringExtra("conflict_policy").orEmpty()) }
+                    .getOrDefault(ConflictPolicy.KEEP_BOTH),
+                intervalMinutes = intent.getIntExtra("interval_minutes", 60).takeIf { it in intervals } ?: 60,
+                watchChanges = intent.getBooleanExtra("watch_changes", false),
+                exclusions = intent.getStringExtra("exclusions").orEmpty().lines().map { it.trim() }
+                    .filter { it.isNotEmpty() && !it.contains("..") }.take(20).joinToString("\n").take(500),
+            )
         }
     }
 

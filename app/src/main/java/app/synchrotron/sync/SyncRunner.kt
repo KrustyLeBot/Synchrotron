@@ -73,6 +73,7 @@ class SyncRunner(private val context: Context) {
 
         val initialized = pair.initialized || (outcome.status == SyncStatus.OK || outcome.status == SyncStatus.CONFLICTS)
         db.pairs().setResult(pairId, outcome.status, outcome.message, System.currentTimeMillis(), initialized)
+        if (!pair.initialized && initialized) WatchService.refresh(context) // sync-on-change starts with the first good sync
         db.history().insert(
             HistoryEntity(
                 pairId = pairId, startedAt = started, durationMs = System.currentTimeMillis() - started,
