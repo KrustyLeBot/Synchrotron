@@ -187,7 +187,10 @@ fun DetailScreen(vm: AppViewModel, pairId: Long, onEdit: (PairEntity) -> Unit, o
                         StatusBadge(h.status)
                         Text(h.message, style = MaterialTheme.typography.bodySmall)
                     }
-                    Text(relativeTime(h.startedAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "${relativeTime(h.startedAt)} · ${"%.1f".format(h.durationMs / 1000.0)} s",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             Gap(32)

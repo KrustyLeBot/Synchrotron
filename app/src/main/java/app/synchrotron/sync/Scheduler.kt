@@ -51,7 +51,8 @@ object Scheduler {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-            .setInputData(workDataOf(SyncWorker.KEY_PAIR to pairId, SyncWorker.KEY_RESYNC to resync, SyncWorker.KEY_FORCE to force, SyncWorker.KEY_WIPE to wipe))
+            .setInputData(workDataOf(SyncWorker.KEY_PAIR to pairId, SyncWorker.KEY_RESYNC to resync, SyncWorker.KEY_FORCE to force, SyncWorker.KEY_WIPE to wipe,
+                SyncWorker.KEY_REQUESTED to System.currentTimeMillis()))
             .build()
         val policy = if (resync || force || wipe != 0) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
         WorkManager.getInstance(context).enqueueUniqueWork(nowName(pairId), policy, request)

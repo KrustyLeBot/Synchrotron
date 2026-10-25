@@ -14,9 +14,13 @@ import javax.crypto.spec.GCMParameterSpec
 /**
  * Keeps the Proton session (user name + session tokens, never the password) encrypted at rest
  * with an AES-256-GCM key that lives in the Android Keystore and cannot be extracted.
+ * The decrypted values are kept in memory after the first read: Keystore operations cost tens of ms.
  */
 class ConfigVault(context: Context) {
     private val file = File(context.noBackupFilesDir, "session.bin")
+
+    @Volatile private var loaded = false
+    @Volatile private var cached: Map<String, String>? = null
 
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -32,18 +36,30 @@ class ConfigVault(context: Context) {
         return gen.generateKey()
     }
 
-    val exists: Boolean get() = file.exists()
+    val exists: Boolean get() = load() != null
 
+    @Synchronized
     fun save(values: Map<String, String>) {
+        if (loaded && cached == values) return
         val cipher = Cipher.getInstance(TRANSFORM).apply { init(Cipher.ENCRYPT_MODE, key()) }
         val ct = cipher.doFinal(JSONObject(values).toString().toByteArray())
         val tmp = File(file.parentFile, "session.tmp")
         tmp.writeBytes(byteArrayOf(cipher.iv.size.toByte()) + cipher.iv + ct)
         tmp.renameTo(file)
+        cached = values
+        loaded = true
     }
 
     /** Returns null when there is no session, or when the Keystore key is gone (restored device). */
+    @Synchronized
     fun load(): Map<String, String>? {
+        if (loaded) return cached
+        cached = decrypt()
+        loaded = true
+        return cached
+    }
+
+    private fun decrypt(): Map<String, String>? {
         if (!file.exists()) return null
         return try {
             val raw = file.readBytes()
@@ -59,8 +75,11 @@ class ConfigVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun clear() {
         file.delete()
+        cached = null
+        loaded = true
     }
 
     private companion object {

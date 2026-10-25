@@ -22,16 +22,31 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * Optional "sync on change": watches the folders of pairs that asked for it and triggers a sync
- * 30 s after the last change. FileObserver is not recursive, so one observer per sub-folder.
+ * Optional "sync on change": watches the folders of pairs that asked for it and syncs a few seconds
+ * after the last change. FileObserver is not recursive, so one observer per sub-folder.
+ *
+ * Being a foreground service, it keeps the process alive: syncs run directly here ([SyncExecutor]),
+ * without WorkManager's scheduling delay, and the Proton connection stays open between syncs.
+ * Changes seen while a sync runs (mostly the sync's own writes, maybe the user's) trigger one more
+ * sync afterwards: a no-op when nothing changed, and nothing the user saved is ever left unsynced.
  */
 class WatchService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val handler = Handler(Looper.getMainLooper())
     private val observers = HashMap<String, FileObserver>()
     private val timers = HashMap<Long, Runnable>()
+    private val changedDuringSync = HashSet<Long>()
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        scope.launch {
+            SyncRegistry.finished.collect { f ->
+                handler.post { if (changedDuringSync.remove(f.pairId)) debounce(f.pairId) }
+            }
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val n = NotificationCompat.Builder(this, Notifier.CH_WATCH)
@@ -68,9 +83,11 @@ class WatchService : Service() {
             FileObserver.MOVED_FROM or FileObserver.MOVED_TO
         val observer = object : FileObserver(dir.absolutePath, mask) {
             override fun onEvent(event: Int, path: String?) {
-                if (path == null || SyncRegistry.isQuiet(pairId)) return
-                if (event and CREATE != 0 && File(dir, path).isDirectory) handler.post { observe(pairId, File(dir, path)) }
-                handler.post { debounce(pairId) }
+                if (path == null) return
+                handler.post {
+                    if (event and CREATE != 0 && File(dir, path).isDirectory) observe(pairId, File(dir, path))
+                    if (SyncRegistry.isRunning(pairId)) changedDuringSync.add(pairId) else debounce(pairId)
+                }
             }
         }
         observers.put(dir.absolutePath, observer)?.stopWatching()
@@ -79,7 +96,11 @@ class WatchService : Service() {
 
     private fun debounce(pairId: Long) {
         timers[pairId]?.let(handler::removeCallbacks)
-        val task = Runnable { Scheduler.syncNow(applicationContext, pairId) }
+        val task = Runnable {
+            timers.remove(pairId)
+            if (SyncRegistry.isRunning(pairId)) changedDuringSync.add(pairId)
+            else SyncExecutor.launch(applicationContext, pairId)
+        }
         timers[pairId] = task
         handler.postDelayed(task, DEBOUNCE_MS)
     }
@@ -96,7 +117,8 @@ class WatchService : Service() {
     }
 
     companion object {
-        private const val DEBOUNCE_MS = 30_000L
+        /** Quiet time after the last change: an app saving a file usually writes it in one burst. */
+        private const val DEBOUNCE_MS = 3_000L
         private const val MAX_DIRS = 800
 
         /** Starts the service when some pair wants it, stops it otherwise. Safe to call from anywhere. */

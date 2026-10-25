@@ -6,7 +6,11 @@
 package bridge
 
 import (
+	"context"
 	"os"
+	"time"
+
+	"github.com/rclone/rclone/fs"
 
 	"github.com/rclone/rclone/librclone/librclone"
 
@@ -36,6 +40,12 @@ func Initialize(home string, tmp string) {
 	if tmp != "" {
 		_ = os.Setenv("TMPDIR", tmp)
 	}
+	// Keep remotes (and so the Proton session with its unlocked keys) for the whole life of the
+	// process instead of rclone's default 5 minutes: re-opening Proton costs seconds on every sync.
+	// Must be set before the first remote is created, when the cache reads it.
+	ci := fs.GetConfig(context.Background())
+	ci.FsCacheExpireDuration = fs.Duration(24 * time.Hour)
+	ci.FsCacheExpireInterval = fs.Duration(10 * time.Minute)
 	librclone.Initialize()
 }
 

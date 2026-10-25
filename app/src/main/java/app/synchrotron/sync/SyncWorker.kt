@@ -36,6 +36,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 resync = inputData.getBoolean(KEY_RESYNC, false),
                 force = inputData.getBoolean(KEY_FORCE, false),
                 wipe = inputData.getInt(KEY_WIPE, 0),
+                requestedAt = inputData.getLong(KEY_REQUESTED, System.currentTimeMillis()),
             ),
         ) { p ->
             val now = System.currentTimeMillis()
@@ -52,6 +53,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         const val KEY_RESYNC = "resync"
         const val KEY_FORCE = "force"
         const val KEY_WIPE = "wipe"
+        const val KEY_REQUESTED = "requested_at"
         private const val NOTIF_BASE = 5000
     }
 }

@@ -1,6 +1,7 @@
 package app.synchrotron.rclone
 
 import android.content.Context
+import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -28,6 +29,10 @@ data class JobResult(val output: String, val transfers: Long, val deletes: Long)
 /**
  * Single access point to the embedded rclone. Only one sync session runs at a time: the Proton
  * session lives in a temporary rclone.conf which exists on disk only while a session is open.
+ *
+ * Speed: rclone keeps each opened remote (the Proton client with its unlocked keys) in memory for the
+ * life of the process (see rclone-bridge), so only the first sync after a process start pays the
+ * Proton connection. The native library is loaded off the main thread ([warmUp]).
  */
 class RcloneEngine private constructor(private val context: Context) {
     private val vault = ConfigVault(context)
@@ -39,43 +44,59 @@ class RcloneEngine private constructor(private val context: Context) {
     /** True while a session (login, sync, browsing) is open. The updater waits for this. */
     val busy: StateFlow<Boolean> = _busy
 
-    val workDir: File get() = File(context.filesDir, "bisync").apply { mkdirs() }
+    /** How long loading the Go runtime and rclone took in this process (0 = not loaded yet). */
+    @Volatile var nativeInitMs = 0L
+        private set
 
-    val hasSession: Boolean get() = vault.exists && vault.load()?.containsKey("client_access_token") == true
-    val username: String? get() = vault.load()?.get("username")
-
-    init {
+    private val native = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val started = SystemClock.elapsedRealtime()
         confFile.delete() // leftover of a crash
         val home = File(context.filesDir, "rclone-home").apply { mkdirs() }
         val tmp = File(context.cacheDir, "rclone-tmp").apply { mkdirs() }
         RcloneNative.initialize(home.absolutePath, tmp.absolutePath)
-        // Go's logger writes to stderr; the log file is for the export-logs feature.
-        File(context.filesDir, "logs").mkdirs()
+        nativeInitMs = SystemClock.elapsedRealtime() - started
+    }
+
+    val workDir: File get() = File(context.filesDir, "bisync").apply { mkdirs() }
+
+    val hasSession: Boolean get() = vault.load()?.containsKey("client_access_token") == true
+    val username: String? get() = vault.load()?.get("username")
+
+    /** Loads rclone in the background so the first request does not wait for it. */
+    fun warmUp() {
+        if (!native.isInitialized()) Thread({ native.value }, "rclone-warmup").start()
     }
 
     /** Raw rc call. Throws [RcloneException] on a non-200 status. */
     suspend fun rpc(method: String, params: JSONObject = JSONObject()): JSONObject = withContext(Dispatchers.IO) {
+        native.value
         val (status, out) = RcloneNative.rpc(method, params.toString())
         val json = runCatching { JSONObject(out) }.getOrDefault(JSONObject())
         if (status != 200) throw RcloneException(status, json.optString("error", out).ifBlank { "rclone error $status" })
         json
     }
 
+    /** Forgets every opened remote; the next call reconnects to Proton. */
+    suspend fun dropRemotes() {
+        runCatching { rpc("fscache/clear") }
+    }
+
     /**
      * Opens a session: decrypts the Proton credentials into a temporary rclone.conf, runs [block],
      * saves any refreshed tokens back to the vault and wipes the file.
      */
-    suspend fun <T> session(block: suspend () -> T): T = sessionLock.withLock {
+    suspend fun <T> session(onLocked: () -> Unit = {}, block: suspend () -> T): T = sessionLock.withLock {
+        onLocked() // syncs run one at a time: lets callers measure how long they queued
         _busy.value = true
         try {
             val creds = vault.load() ?: throw SessionExpiredException("Pas de session Proton")
             openSession(creds)
             try {
                 val result = block()
-                harvest()
+                harvest(creds)
                 result
             } catch (e: Throwable) {
-                runCatching { harvest() }
+                runCatching { harvest(creds) }
                 throw e
             } finally {
                 closeSession()
@@ -88,20 +109,19 @@ class RcloneEngine private constructor(private val context: Context) {
     private suspend fun openSession(values: Map<String, String>) {
         writeConf(values)
         rpc("config/setpath", JSONObject().put("path", confFile.absolutePath))
-        // rclone caches filesystems (and Proton's folder-id cache) for the whole process: a folder deleted or
-        // recreated by an earlier session would otherwise keep answering "directory not found".
-        runCatching { rpc("fs/cache-clear") }
     }
 
     private fun writeConf(values: Map<String, String>) {
         val sb = StringBuilder("[$REMOTE]\ntype = protondrive\n")
+        // Remotes stay open across syncs: Proton's metadata cache would then hide changes made on the PC.
+        sb.append("enable_caching = false\n")
         values.forEach { (k, v) -> if (k != "type") sb.append(k).append(" = ").append(v).append('\n') }
         confFile.writeText(sb.toString())
         confFile.setReadable(false, false); confFile.setReadable(true, true)
     }
 
     /** Reads the (possibly refreshed) session tokens back from rclone and persists them encrypted. */
-    private suspend fun harvest() {
+    private suspend fun harvest(before: Map<String, String>?) {
         val cfg = rpc("config/get", JSONObject().put("name", REMOTE))
         var kept = KEPT_KEYS.mapNotNull { k -> cfg.optString(k).takeIf { it.isNotEmpty() }?.let { k to it } }.toMap()
         if (kept["client_access_token"] == null && confFile.exists()) {
@@ -113,8 +133,14 @@ class RcloneEngine private constructor(private val context: Context) {
         }
         if (kept["client_access_token"] == null) {
             // rclone drops the tokens itself when Proton rejects them.
+            dropRemotes()
             vault.clear()
             throw SessionExpiredException("Session Proton expirée")
+        }
+        if (before != null && kept["client_refresh_token"] != before["client_refresh_token"]) {
+            // Proton rotated the refresh token: other open remotes still hold the old one and would get
+            // the session revoked when they refresh. Drop them; they reconnect with the new tokens.
+            dropRemotes()
         }
         vault.save(kept)
     }
@@ -130,7 +156,7 @@ class RcloneEngine private constructor(private val context: Context) {
     suspend fun login(email: String, password: String, twoFa: String, mailboxPassword: String) = sessionLock.withLock {
         _busy.value = true
         try {
-            val parameters = JSONObject().put("username", email).put("password", password)
+            val parameters = JSONObject().put("username", email).put("password", password).put("enable_caching", false)
             if (twoFa.isNotBlank()) parameters.put("2fa", twoFa.trim())
             if (mailboxPassword.isNotBlank()) parameters.put("mailbox_password", mailboxPassword)
             confFile.delete()
@@ -142,11 +168,11 @@ class RcloneEngine private constructor(private val context: Context) {
                         .put("parameters", parameters)
                         .put("opt", JSONObject().put("obscure", true).put("nonInteractive", true))
                 )
-                // Creating the remote does not talk to Proton; listing the root performs the real login.
-                rpc("operations/list", JSONObject().put("fs", "$REMOTE:").put("remote", "")
-                    .put("opt", JSONObject().put("noMimeType", true).put("noModTime", true)))
-                harvest()
+                // Creating the remote does not talk to Proton; opening it performs the real login (no listing needed).
+                rpc("operations/fsinfo", JSONObject().put("fs", "$REMOTE:"))
+                harvest(null)
             } finally {
+                // Also forgets the remote opened with the password in memory.
                 runCatching { rpc("config/delete", JSONObject().put("name", REMOTE)) }
                 closeSession()
             }
@@ -160,12 +186,15 @@ class RcloneEngine private constructor(private val context: Context) {
         confFile.delete()
     }
 
-    /** Lists sub-folders of [path] ("" = Drive root) on Proton. Needs an open [session]. */
+    /**
+     * Lists sub-folders of [path] ("" = Drive root) on Proton. Needs an open [session]. Always goes through
+     * the Drive root remote: one remote per browsed folder would mean one Proton connection per folder.
+     */
     suspend fun listRemoteDirs(path: String): List<RemoteEntry> =
-        listEntries("$REMOTE:$path", recurse = false).filter { it.isDir }.sortedBy { it.name.lowercase() }
+        listEntries("$REMOTE:", recurse = false, remote = path).filter { it.isDir }.sortedBy { it.name.lowercase() }
 
-    suspend fun listEntries(fs: String, recurse: Boolean, filter: JSONObject? = null): List<RemoteEntry> {
-        val params = JSONObject().put("fs", fs).put("remote", "")
+    suspend fun listEntries(fs: String, recurse: Boolean, filter: JSONObject? = null, remote: String = ""): List<RemoteEntry> {
+        val params = JSONObject().put("fs", fs).put("remote", remote)
             .put("opt", JSONObject().put("recurse", recurse).put("noMimeType", true).put("noModTime", true))
         if (filter != null) params.put("_filter", filter)
         val arr: JSONArray = rpc("operations/list", params).optJSONArray("list") ?: JSONArray()
@@ -179,9 +208,19 @@ class RcloneEngine private constructor(private val context: Context) {
         rpc("operations/mkdir", JSONObject().put("fs", "$REMOTE:").put("remote", path))
     }
 
+    /** Opens (or reuses) the remote for [fs] and creates its root folder if needed. */
+    suspend fun mkdirRoot(fs: String) {
+        rpc("operations/mkdir", JSONObject().put("fs", fs).put("remote", ""))
+    }
+
+    /** Opens (or reuses) the remote for [fs]: the Proton connection, measured separately from the sync. */
+    suspend fun connect(fs: String) {
+        rpc("operations/fsinfo", JSONObject().put("fs", fs))
+    }
+
     /**
-     * Runs a long rc call as a cancellable job, reporting progress about twice a second.
-     * Cancelling the coroutine stops the rclone job.
+     * Runs a long rc call as a cancellable job, reporting progress. Polls quickly at first (most syncs
+     * are short) then every 400 ms. Cancelling the coroutine stops the rclone job.
      */
     suspend fun runJob(
         method: String,
@@ -191,13 +230,16 @@ class RcloneEngine private constructor(private val context: Context) {
     ): JobResult {
         params.put("_async", true).put("_group", group)
         val jobId = rpc(method, params).getLong("jobid")
+        var polls = 0
         try {
             while (true) {
-                delay(500)
+                delay(if (polls++ < 30) 60 else 400)
                 val status = rpc("job/status", JSONObject().put("jobid", jobId))
-                val stats = runCatching { rpc("core/stats", JSONObject().put("group", group)) }.getOrNull()
+                val finished = status.optBoolean("finished")
+                // Progress is only worth asking for once the sync lasts a little.
+                val stats = if (finished || polls > 5) runCatching { rpc("core/stats", JSONObject().put("group", group)) }.getOrNull() else null
                 if (stats != null) onProgress(stats.toProgress())
-                if (status.optBoolean("finished")) {
+                if (finished) {
                     val result = JobResult(
                         output = status.optJSONObject("output")?.optString("output").orEmpty(),
                         transfers = stats?.optLong("transfers") ?: 0,

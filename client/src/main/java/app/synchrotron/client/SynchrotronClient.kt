@@ -1,6 +1,8 @@
 package app.synchrotron.client
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
+import android.content.ServiceConnection
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -8,7 +10,11 @@ import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.os.Bundle
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
+import android.os.Message
+import android.os.Messenger
+import android.os.RemoteException
 import androidx.core.content.ContextCompat
 
 /** Result of a finished sync, delivered by [SynchrotronClient.onSyncFinished]. */
@@ -46,6 +52,12 @@ object SynchrotronClient {
     const val ACTION_REGISTER_FOLDER = "app.synchrotron.action.REGISTER_FOLDER"
     const val ACTION_SYNC_NOW = "app.synchrotron.action.SYNC_NOW"
     const val ACTION_SYNC_FINISHED = "app.synchrotron.action.SYNC_FINISHED"
+    const val ACTION_BIND_SYNC = "app.synchrotron.action.BIND_SYNC"
+
+    // Messages of the bound sync service (SyncService in Synchrotron).
+    private const val MSG_SYNC = 1
+    private const val MSG_ANSWER = 2
+    private const val MSG_FINISHED = 3
 
     // Result codes of SYNC_NOW (ordered broadcast), see SyncNowReceiver in Synchrotron.
     private const val R_STARTED = 1
@@ -128,6 +140,10 @@ object SynchrotronClient {
      * "Be up to date when I open": asks Synchrotron to sync [localPath] now and reports the outcome through
      * [onState] (main thread). Typical use: show the data read-only on [SyncState.Syncing], reload on
      * [SyncState.Done] with changes, become editable again on anything else.
+     *
+     * It binds Synchrotron's sync service: while this app is in the foreground and bound, Android runs
+     * Synchrotron at the same priority, so the sync starts at once. Older Synchrotron builds without the
+     * service are reached through the SYNC_NOW broadcast instead.
      * A 45 s cool-down per folder avoids hammering Proton when the app is opened repeatedly.
      * @return a function that stops listening (call it from `onDestroy`).
      */
@@ -154,42 +170,93 @@ object SynchrotronClient {
         val offline = runCatching { app.getSystemService(ConnectivityManager::class.java).activeNetwork == null }.getOrDefault(false)
         if (offline) { skip(SkipReason.NETWORK); return cancel }
 
+        /** Answer to the request: same codes for the service and the ordered broadcast. */
+        fun onAnswer(code: Int) {
+            if (finished) return
+            when (code) {
+                R_STARTED, R_RUNNING -> {
+                    prefs.edit().putLong("last_$localPath", System.currentTimeMillis()).apply()
+                    onState(SyncState.Syncing)
+                    // Too slow: let the user work again, but keep listening to report the late result.
+                    main.postDelayed({ if (!finished) onState(SyncState.TimedOut) }, timeoutMs)
+                    main.postDelayed({ finished = true; stop() }, GIVE_UP_MS)
+                }
+                R_NOT_REGISTERED -> end(SyncState.Skipped(SkipReason.NOT_REGISTERED))
+                R_NEEDS_SETUP -> end(SyncState.Skipped(SkipReason.NEEDS_SETUP))
+                R_NOT_LOGGED_IN -> end(SyncState.Skipped(SkipReason.NOT_LOGGED_IN))
+                R_FRESH -> end(SyncState.Skipped(SkipReason.FRESH))
+                R_NETWORK -> end(SyncState.Skipped(SkipReason.NETWORK))
+                else -> end(SyncState.Skipped(SkipReason.UNAVAILABLE))
+            }
+        }
+
+        fun onFinished(status: String, changes: Int) {
+            val ok = status == "OK" || status == "CONFLICTS"
+            end(if (ok) SyncState.Done(changes, status == "CONFLICTS") else SyncState.Failed(status))
+        }
+
+        // --- Fast path: bound service ---
+        val replies = Messenger(Handler(Looper.getMainLooper()) { msg ->
+            when (msg.what) {
+                MSG_ANSWER -> onAnswer(msg.arg1)
+                MSG_FINISHED -> onFinished(msg.data?.getString("status").orEmpty(), msg.data?.getInt("changes") ?: 0)
+            }
+            true
+        })
+        var fallback: () -> Unit = {}
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                if (finished || binder == null) return
+                val request = Message.obtain(null, MSG_SYNC).apply {
+                    data = Bundle().apply { putString("local_path", localPath) }
+                    replyTo = replies
+                }
+                try { Messenger(binder).send(request) } catch (e: RemoteException) { fallback() }
+            }
+
+            // Synchrotron's process died (killed, updated): the sync is lost, do not keep the app read-only.
+            override fun onServiceDisconnected(name: ComponentName?) = end(SyncState.Failed("DISCONNECTED"))
+            override fun onBindingDied(name: ComponentName?) = end(SyncState.Failed("DISCONNECTED"))
+            override fun onNullBinding(name: ComponentName?) = fallback()
+        }
+        val bindIntent = Intent(ACTION_BIND_SYNC).setPackage(PACKAGE)
+        val bound = try {
+            app.bindService(bindIntent, connection, Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT)
+        } catch (e: SecurityException) {
+            false
+        }
+        if (bound) {
+            stop = { runCatching { app.unbindService(connection) } }
+            fallback = { stop(); stop = {}; broadcastPath(app, localPath, main, ::onAnswer, ::onFinished) { stop = it } }
+            return cancel
+        }
+        // --- Older Synchrotron: ordered broadcast, then SYNC_FINISHED ---
+        broadcastPath(app, localPath, main, ::onAnswer, ::onFinished) { stop = it }
+        return cancel
+    }
+
+    private fun broadcastPath(
+        app: Context, localPath: String, main: Handler,
+        onAnswer: (Int) -> Unit, onFinished: (String, Int) -> Unit, setStop: (() -> Unit) -> Unit,
+    ) {
         var pairId = -1L
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context, intent: Intent) {
                 val r = intent.toResult()
                 if (pairId >= 0 && r.pairId != pairId) return
-                end(if (r.ok) SyncState.Done(r.changes, r.status == "CONFLICTS") else SyncState.Failed(r.status))
+                onFinished(r.status, r.changes)
             }
         }
         // Listen before asking, so a very fast sync cannot be missed.
         ContextCompat.registerReceiver(app, receiver, IntentFilter(ACTION_SYNC_FINISHED), ContextCompat.RECEIVER_EXPORTED)
-        stop = { runCatching { app.unregisterReceiver(receiver) } }
-
+        setStop { runCatching { app.unregisterReceiver(receiver) } }
         val request = Intent(ACTION_SYNC_NOW).setPackage(PACKAGE).putExtra("local_path", localPath)
         app.sendOrderedBroadcast(request, null, object : BroadcastReceiver() {
             override fun onReceive(c: Context, intent: Intent) {
-                if (finished) return
-                val extras: Bundle? = getResultExtras(false)
-                when (resultCode) {
-                    R_STARTED, R_RUNNING -> {
-                        pairId = extras?.getLong("pair_id", -1L) ?: -1L
-                        prefs.edit().putLong("last_$localPath", System.currentTimeMillis()).apply()
-                        onState(SyncState.Syncing)
-                        // Too slow: let the user work again, but keep listening to report the late result.
-                        main.postDelayed({ if (!finished) onState(SyncState.TimedOut) }, timeoutMs)
-                        main.postDelayed({ finished = true; stop() }, GIVE_UP_MS)
-                    }
-                    R_NOT_REGISTERED -> end(SyncState.Skipped(SkipReason.NOT_REGISTERED))
-                    R_NEEDS_SETUP -> end(SyncState.Skipped(SkipReason.NEEDS_SETUP))
-                    R_NOT_LOGGED_IN -> end(SyncState.Skipped(SkipReason.NOT_LOGGED_IN))
-                    R_FRESH -> end(SyncState.Skipped(SkipReason.FRESH))
-                    R_NETWORK -> end(SyncState.Skipped(SkipReason.NETWORK))
-                    else -> end(SyncState.Skipped(SkipReason.UNAVAILABLE))
-                }
+                pairId = getResultExtras(false)?.getLong("pair_id", -1L) ?: -1L
+                onAnswer(if (resultCode == NO_ANSWER) -1 else resultCode)
             }
         }, main, NO_ANSWER, null, null)
-        return cancel
     }
 
     private fun Intent.toResult() = SyncResult(

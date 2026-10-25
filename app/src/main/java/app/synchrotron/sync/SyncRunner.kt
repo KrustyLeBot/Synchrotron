@@ -2,6 +2,7 @@ package app.synchrotron.sync
 
 import android.content.Context
 import android.os.Environment
+import android.os.SystemClock
 import app.synchrotron.data.AppDb
 import app.synchrotron.data.HistoryEntity
 import app.synchrotron.data.PairEntity
@@ -26,6 +27,8 @@ class SyncOptions(
     val force: Boolean = false,
     /** The user confirmed that a deliberately emptied side must be mirrored: [WIPE_REMOTE] or [WIPE_LOCAL]. */
     val wipe: Int = 0,
+    /** When the sync was asked for (wall clock), to measure how long it waited before starting. */
+    val requestedAt: Long = System.currentTimeMillis(),
 )
 
 const val WIPE_REMOTE = 1 // the phone folder is empty: empty Proton too
@@ -36,7 +39,7 @@ class SyncRunner(private val context: Context) {
     private val db = AppDb.get(context)
 
     suspend fun run(pairId: Long, options: SyncOptions = SyncOptions(), onProgress: suspend (app.synchrotron.rclone.Progress) -> Unit = {}) {
-        val pair = db.pairs().get(pairId) ?: return
+        val pair = db.pairs().get(pairId) ?: return SyncRegistry.emitFinished(pairId, SyncStatus.ERROR, 0)
         if (SyncRegistry.isRunning(pairId)) return
         val started = System.currentTimeMillis()
 
@@ -53,7 +56,7 @@ class SyncRunner(private val context: Context) {
                 SyncRegistry.start(pairId, coroutineContext[Job])
                 db.pairs().setStatus(pairId, SyncStatus.RUNNING, "")
                 try {
-                    execute(pair, options) { SyncRegistry.update(pairId, it); onProgress(it) }
+                    execute(pair, options, started) { SyncRegistry.update(pairId, it); onProgress(it) }
                 } catch (e: CancellationException) {
                     db.pairs().setStatus(pairId, SyncStatus.ERROR, "Annulée")
                     SyncRegistry.finish(pairId)
@@ -87,30 +90,60 @@ class SyncRunner(private val context: Context) {
             SyncStatus.CONFLICTS -> Notifier.conflicts(context, pair, outcome.message)
             else -> Notifier.clear(context, pair)
         }
+        SyncRegistry.emitFinished(pairId, outcome.status, outcome.changes)
         Integration.broadcastFinished(context, pair, outcome.status, outcome.changes)
     }
 
     private class Outcome(val status: SyncStatus, val message: String, val changes: Int, val log: String)
 
-    private suspend fun execute(pair: PairEntity, options: SyncOptions, onProgress: suspend (app.synchrotron.rclone.Progress) -> Unit): Outcome =
-        engine.session {
-            if (pair.remotePath.isNotEmpty()) engine.mkdir(pair.remotePath)
+    private suspend fun execute(
+        pair: PairEntity, options: SyncOptions, started: Long,
+        onProgress: suspend (app.synchrotron.rclone.Progress) -> Unit,
+    ): Outcome {
+        val waited = started - options.requestedAt
+        var mark = SystemClock.elapsedRealtime()
+        fun lap(): Long = SystemClock.elapsedRealtime().let { now -> (now - mark).also { mark = now } }
+        var queued = 0L
+        return engine.session(onLocked = { queued = lap() }) {
+            val opened = lap()
             val remote = "${RcloneEngine.REMOTE}:${pair.remotePath}"
+            // Opening the remote is the Proton connection: free once this process has done it.
+            // The folder only needs creating before the first sync; a vanished one is handled below.
+            if (!pair.initialized || options.resync) engine.mkdirRoot(remote) else engine.connect(remote)
+            val connected = lap()
             if (options.wipe != 0) mirrorEmptiedSide(pair, remote, options.wipe)
             val group = "pair-${pair.id}"
-            val result = when (pair.mode) {
+            suspend fun transfer() = when (pair.mode) {
                 SyncMode.BIDIRECTIONAL -> bisync(pair, remote, group, options, onProgress)
                 SyncMode.UPLOAD_ONLY -> copy(pair.localPath, remote, pair, group, onProgress)
                 SyncMode.DOWNLOAD_ONLY -> copy(remote, pair.localPath, pair, group, onProgress)
             }
+            val result = try {
+                transfer()
+            } catch (e: RcloneException) {
+                // The Proton folder was deleted or recreated elsewhere: forget its cached id and try once more.
+                if (!e.message.orEmpty().contains("not found", ignoreCase = true)) throw e
+                engine.dropRemotes()
+                engine.mkdirRoot(remote)
+                transfer()
+            }
+            val synced = lap()
+            val timings = "Durées : démarrage ${secs(waited)} · file d'attente ${secs(queued)} · moteur ${secs(opened)} · " +
+                "Proton ${secs(connected)} · synchro ${secs(synced)}"
             val conflicts = ConflictScanner.scan(File(pair.localPath)).size
             val changes = (result.transfers + result.deletes).toInt()
             val message = buildString {
                 append(if (changes == 0) "Rien à synchroniser" else "$changes changement${if (changes > 1) "s" else ""}")
                 if (conflicts > 0) append(" · $conflicts conflit${if (conflicts > 1) "s" else ""}")
             }
-            Outcome(if (conflicts > 0) SyncStatus.CONFLICTS else SyncStatus.OK, message, changes, clean(result.output))
+            Outcome(
+                if (conflicts > 0) SyncStatus.CONFLICTS else SyncStatus.OK, message, changes,
+                timings + "\n" + clean(result.output),
+            )
         }
+    }
+
+    private fun secs(ms: Long) = "%.1f s".format(ms.coerceAtLeast(0) / 1000.0)
 
     private suspend fun bisync(
         pair: PairEntity, remote: String, group: String, options: SyncOptions,

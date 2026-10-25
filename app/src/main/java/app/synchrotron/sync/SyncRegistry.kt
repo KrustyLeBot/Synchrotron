@@ -2,7 +2,10 @@ package app.synchrotron.sync
 
 import app.synchrotron.rclone.Progress
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import app.synchrotron.data.SyncStatus
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
@@ -11,7 +14,6 @@ object SyncRegistry {
     private val _progress = MutableStateFlow<Map<Long, Progress>>(emptyMap())
     val progress: StateFlow<Map<Long, Progress>> = _progress
 
-    private val finishedAt = HashMap<Long, Long>()
 
     private val jobs = HashMap<Long, Job>()
 
@@ -28,17 +30,20 @@ object SyncRegistry {
     fun update(pairId: Long, p: Progress) = _progress.update { it + (pairId to p) }
 
     fun finish(pairId: Long) {
-        synchronized(finishedAt) { finishedAt[pairId] = System.currentTimeMillis() }
         synchronized(jobs) { jobs.remove(pairId) }
         _progress.update { it - pairId }
     }
 
     fun isRunning(pairId: Long) = pairId in _progress.value
 
-    /** True while a sync runs, and shortly after: file events caused by the sync itself are ignored. */
-    fun isQuiet(pairId: Long, graceMs: Long = 45_000): Boolean {
-        if (isRunning(pairId)) return true
-        val at = synchronized(finishedAt) { finishedAt[pairId] } ?: return false
-        return System.currentTimeMillis() - at < graceMs
+    data class Finished(val pairId: Long, val status: SyncStatus, val changes: Int)
+
+    private val _finished = MutableSharedFlow<Finished>(extraBufferCapacity = 16)
+
+    /** Every finished sync, for callers waiting on one (the bound SyncService, the folder watcher). */
+    val finished: SharedFlow<Finished> = _finished
+
+    fun emitFinished(pairId: Long, status: SyncStatus, changes: Int) {
+        _finished.tryEmit(Finished(pairId, status, changes))
     }
 }

@@ -48,6 +48,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Fast path for "sync when the app opens": bound by the client library. Same rules as SYNC_NOW. -->
+        <service
+            android:name=".integration.SyncService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="app.synchrotron.action.BIND_SYNC" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".integration.SyncNowReceiver"
             android:exported="true">
