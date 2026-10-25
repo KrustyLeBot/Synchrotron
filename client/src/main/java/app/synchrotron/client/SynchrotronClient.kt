@@ -26,7 +26,7 @@ sealed interface SyncState {
     /** Finished: reload the data from disk when [changes] > 0. */
     data class Done(val changes: Int, val hasConflicts: Boolean) : SyncState
     data class Failed(val status: String) : SyncState
-    /** Took too long: make the app editable again. A late SYNC_FINISHED is not reported. */
+    /** Took too long: make the app editable again. The late [Done] / [Failed] is still reported afterwards. */
     data object TimedOut : SyncState
     /** No sync to wait for. [NOT_REGISTERED] is the cue to propose [SynchrotronClient.registerFolder]. */
     data class Skipped(val reason: SkipReason) : SyncState
@@ -58,6 +58,7 @@ object SynchrotronClient {
     private const val NO_ANSWER = -1000
 
     private const val COOLDOWN_MS = 45_000L
+    private const val GIVE_UP_MS = 10 * 60_000L
 
     fun isInstalled(context: Context): Boolean = try {
         context.packageManager.getPackageInfo(PACKAGE, 0); true
@@ -174,7 +175,9 @@ object SynchrotronClient {
                         pairId = extras?.getLong("pair_id", -1L) ?: -1L
                         prefs.edit().putLong("last_$localPath", System.currentTimeMillis()).apply()
                         onState(SyncState.Syncing)
-                        main.postDelayed({ end(SyncState.TimedOut) }, timeoutMs)
+                        // Too slow: let the user work again, but keep listening to report the late result.
+                        main.postDelayed({ if (!finished) onState(SyncState.TimedOut) }, timeoutMs)
+                        main.postDelayed({ finished = true; stop() }, GIVE_UP_MS)
                     }
                     R_NOT_REGISTERED -> end(SyncState.Skipped(SkipReason.NOT_REGISTERED))
                     R_NEEDS_SETUP -> end(SyncState.Skipped(SkipReason.NEEDS_SETUP))
