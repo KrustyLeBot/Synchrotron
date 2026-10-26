@@ -115,8 +115,10 @@ class RcloneEngine private constructor(private val context: Context) {
         // Proton's metadata cache stays on (the default): without it every listed file costs one API call per
         // parent folder to rebuild its keys. It does not hide changes made elsewhere: folder contents are
         // always fetched from Proton, only folder keys and metadata are kept.
-        val sb = StringBuilder("[$REMOTE]\ntype = protondrive\n")
-        values.forEach { (k, v) -> if (k != "type") sb.append(k).append(" = ").append(v).append('\n') }
+        // An upload cut short (app killed, network lost, another client writing the same file) leaves a draft
+        // on Proton, and every later upload of that file then fails with "already exists" (code 2500).
+        val sb = StringBuilder("[$REMOTE]\ntype = protondrive\nreplace_existing_draft = true\n")
+        values.forEach { (k, v) -> if (k != "type" && k != "replace_existing_draft") sb.append(k).append(" = ").append(v).append('\n') }
         confFile.writeText(sb.toString())
         confFile.setReadable(false, false); confFile.setReadable(true, true)
     }

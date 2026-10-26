@@ -13,6 +13,7 @@ import app.synchrotron.notify.Notifier
 import app.synchrotron.rclone.RcloneEngine
 import app.synchrotron.rclone.RcloneException
 import app.synchrotron.rclone.SessionExpiredException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlin.coroutines.coroutineContext
@@ -121,10 +122,22 @@ class SyncRunner(private val context: Context) {
             val result = try {
                 transfer()
             } catch (e: RcloneException) {
-                // The Proton folder was deleted or recreated elsewhere: forget its cached id and try once more.
-                if (!e.message.orEmpty().contains("not found", ignoreCase = true)) throw e
-                engine.dropRemotes()
-                engine.mkdirRoot(remote)
+                val msg = e.message.orEmpty()
+                when {
+                    // The Proton folder was deleted or recreated elsewhere: forget its cached id and try once more.
+                    msg.contains("not found", ignoreCase = true) -> {
+                        engine.dropRemotes()
+                        engine.mkdirRoot(remote)
+                    }
+                    // Another client (Proton's own app on a PC) wrote the same file at the same moment: the
+                    // next attempt sees its version, so give it a few seconds and try once more.
+                    msg.contains("already exist", ignoreCase = true) || msg.contains("Code=2500") -> {
+                        delay(5_000)
+                        engine.dropRemotes()
+                        engine.connect(remote)
+                    }
+                    else -> throw e
+                }
                 transfer()
             }
             val synced = lap()

@@ -259,18 +259,32 @@ private fun FirstSyncCard(preview: Preview?, loading: Boolean, error: String?, o
 
 @Composable
 private fun ConflictCard(name: String, group: List<ConflictFile>, root: File, context: android.content.Context, onResolved: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.padding(12.dp)) {
-            Text(name, fontWeight = FontWeight.SemiBold)
-            Text("Modifié des deux côtés", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                group.sortedBy { it.side }.forEach { c ->
-                    TextButton(onClick = { openFile(context, c.file) }) { Text(if (c.side == 1) "Ouvrir (téléphone)" else "Ouvrir (Proton)") }
-                }
+    val current = File(root, name).takeIf { it.isFile }
+    val dates = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+    @Composable
+    fun Version(label: String, file: File, onKeep: () -> Unit) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(label, fontWeight = FontWeight.Medium)
+                Text(
+                    "${dates.format(java.util.Date(file.lastModified()))} · ${formatBytes(file.length())}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { ConflictResolver.keep(root, group, 1); onResolved() }) { Text("Garder téléphone") }
-                OutlinedButton(onClick = { ConflictResolver.keep(root, group, 2); onResolved() }) { Text("Garder Proton") }
+            TextButton(onClick = { openFile(context, file) }) { Text("Ouvrir") }
+            OutlinedButton(onClick = { onKeep(); onResolved() }) { Text("Garder") }
+        }
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(name, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Modifié des deux côtés. Garde une version : les autres sont supprimées, ici et sur Proton.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            current?.let { Version("Version actuelle", it) { ConflictResolver.keep(root, group, null) } }
+            group.sortedByDescending { it.number }.forEach { c ->
+                Version(ConflictScanner.origin(c, group).replaceFirstChar { it.uppercase() }, c.file) { ConflictResolver.keep(root, group, c) }
             }
         }
     }

@@ -2,9 +2,14 @@ package app.synchrotron.sync
 
 import java.io.File
 
-data class ConflictFile(val file: File, val originalName: String, val side: Int)
+/** [number] is bisync's conflict counter (`name.ext.conflictN`). */
+data class ConflictFile(val file: File, val originalName: String, val number: Int)
 
-/** Bisync names the losing copies `name.ext.conflict1` (local) and `name.ext.conflict2` (Proton). */
+/**
+ * Bisync renames conflicting copies `name.ext.conflictN`, numbering them in order of appearance: with
+ * no winner, the phone copy gets N and the Proton copy N + 1; with a winner (newer, larger…) only the
+ * loser is renamed and the winner keeps the original name. So the number alone never tells the side.
+ */
 object ConflictScanner {
     private val pattern = Regex("""^(.*)\.conflict(\d+)$""")
 
@@ -17,14 +22,19 @@ object ConflictScanner {
         }
         return out
     }
+
+    /** Where a copy most likely comes from, given the other copies of the same file. */
+    fun origin(copy: ConflictFile, group: List<ConflictFile>): String = when {
+        group.any { it.number == copy.number + 1 } -> "version du téléphone"
+        group.any { it.number == copy.number - 1 } -> "version de Proton"
+        else -> "version écartée"
+    }
 }
 
 object ConflictResolver {
-    /** Keeps one side (1 = phone, 2 = Proton) under the original name and deletes the other copies. */
-    fun keep(root: File, group: List<ConflictFile>, keepSide: Int) {
-        val chosen = group.firstOrNull { it.side == keepSide } ?: return
-        val target = File(root, chosen.originalName)
-        chosen.file.copyTo(target, overwrite = true)
+    /** Puts [chosen] under the original name (null keeps the current file) and deletes every conflict copy. */
+    fun keep(root: File, group: List<ConflictFile>, chosen: ConflictFile?) {
+        if (chosen != null) chosen.file.copyTo(File(root, chosen.originalName), overwrite = true)
         group.forEach { it.file.delete() }
     }
 }
