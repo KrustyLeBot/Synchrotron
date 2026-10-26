@@ -227,7 +227,8 @@ class SyncRunner(private val context: Context) {
 
     companion object {
         private val ansi = Regex("\u001B\\[[;\\d]*m")
-        private val builtinExcludes = listOf(".trashed-*", ".pending-*", ".thumbnails/")
+        // Temporaries of the suite's atomic writes and unfinished downloads are never synced.
+        private val builtinExcludes = listOf(".trashed-*", ".pending-*", ".thumbnails/", "*.tmp", "*.part")
 
         const val MSG_LOCAL_EMPTY = "Le dossier du téléphone est entièrement vide."
         const val MSG_REMOTE_EMPTY = "Le dossier Proton est entièrement vide."

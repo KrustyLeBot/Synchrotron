@@ -67,12 +67,12 @@ Synchrotron is the sync hub of a small suite of personal apps, built the same wa
 Shared rules:
 
 - **Data in plain files** in a public folder (JSON or Markdown), written atomically (`*.tmp` then
-  rename, `*.tmp` excluded from the sync). An unreadable file is reported and never overwritten.
+  rename; `*.tmp` and `*.part` are always excluded from the sync). An unreadable file is reported and never overwritten.
   Device-only state (caches, the phone position, UI preferences) stays private and out of the sync.
 - **Sync on open**: each app embeds a copy of `client/` (`SynchrotronClient`), asks for a sync when
-  it opens, shows its data read-only with a banner while it runs and re-reads it afterwards. When
-  Synchrotron is installed but the folder is not registered, a banner offers "Configurer"
-  (policy *newer wins*, watch changes on). Nothing happens when Synchrotron is absent.
+  it opens, shows its data read-only with a banner while it runs and re-reads it afterwards. The
+  apps have no sync settings: folders are added in Synchrotron (policy *newer wins* and watch
+  changes recommended). Nothing happens when Synchrotron is absent or the folder is not added.
 - **Look**: fixed brand palette per app (never the wallpaper colors), generated with Material's
   tonal-spot recipe from the accent (`SuitePalette.kt`), the same rounded shapes, and a launcher
   icon in the same style: diagonal gradient of the accent, white glyph with one light detail,
