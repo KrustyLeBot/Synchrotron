@@ -52,6 +52,35 @@ SynchrotronClient.syncNow(context, notesDir.path)
 val stop = SynchrotronClient.onSyncFinished(context) { reload() }
 ```
 
+## The suite
+
+Synchrotron is the sync hub of a small suite of personal apps, built the same way:
+
+| App | Accent | Local folder (Android) | Proton Drive | Windows |
+|---|---|---|---|---|
+| Synchrotron | violet `#6D4AFF` | — | — | — |
+| Griffonote (notes) | amber `#F9A825` | folder chosen in the app | `Apps/Griffonote` | Proton's own client syncs the folder |
+| Ecoutify (music) | teal `#1AAE9F` | `Ecoutify/` | `Apps/Ecoutify` | same |
+| Météorite (weather) | blue `#2563EB` | `Documents/Meteorite/` | `Apps/Meteorite` | — |
+| PersonalDashboard | — | `Documents/PersonalDashboard/` | `Apps/PersonalDashboard` | same |
+
+Shared rules:
+
+- **Data in plain files** in a public folder (JSON or Markdown), written atomically (`*.tmp` then
+  rename, `*.tmp` excluded from the sync). An unreadable file is reported and never overwritten.
+  Device-only state (caches, the phone position, UI preferences) stays private and out of the sync.
+- **Sync on open**: each app embeds a copy of `client/` (`SynchrotronClient`), asks for a sync when
+  it opens, shows its data read-only with a banner while it runs and re-reads it afterwards. When
+  Synchrotron is installed but the folder is not registered, a banner offers "Configurer"
+  (policy *newer wins*, watch changes on). Nothing happens when Synchrotron is absent.
+- **Look**: fixed brand palette per app (never the wallpaper colors), generated with Material's
+  tonal-spot recipe from the accent (`SuitePalette.kt`), the same rounded shapes, and a launcher
+  icon in the same style: diagonal gradient of the accent, white glyph with one light detail,
+  monochrome layer for themed icons. The Windows apps use the same palette and icon.
+- **Builds**: AGP 8.9.1, Kotlin 2.1.20, Compose BOM 2025.04.01, minSdk 26 / target 35; every push to
+  `main` publishes a release build to the rolling `latest` release, and each app updates itself
+  from it. Signing keys never change.
+
 ## Build
 
 ```
