@@ -117,7 +117,7 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
                                 Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_STREAM, uri)
                                     // Some apps only read the text: the newest part of the log goes along.
                                     .putExtra(Intent.EXTRA_TEXT, file.readText().takeLast(100_000))
-                                    .setClipData(android.content.ClipData.newRawUri("logs", uri))
+                                    .apply { clipData = android.content.ClipData.newRawUri("logs", uri) } // setClipData returns void
                                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
                                 "Exporter les logs",
                             )
