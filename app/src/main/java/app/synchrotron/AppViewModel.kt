@@ -15,8 +15,7 @@ import app.synchrotron.sync.Scheduler
 import app.synchrotron.sync.SyncRegistry
 import app.synchrotron.sync.WatchService
 import app.synchrotron.sync.computePreview
-import app.synchrotron.update.UpdateInfo
-import app.synchrotron.update.Updater
+import app.synchrotron.suite.SuiteUpdates
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,15 +23,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
 
-sealed interface UpdateState {
-    data object Idle : UpdateState
-    data object Checking : UpdateState
-    data object UpToDate : UpdateState
-    data class Available(val info: UpdateInfo) : UpdateState
-    data class Downloading(val info: UpdateInfo, val progress: Float) : UpdateState
-    data class Ready(val info: UpdateInfo, val apk: File) : UpdateState
-    data class Failed(val message: String) : UpdateState
-}
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     val engine = RcloneEngine.get(app)
@@ -51,7 +41,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** The pair being created or edited; kept here so the folder pickers can fill it in. */
     val draft = MutableStateFlow(newDraft())
 
-    val update = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val updates = SuiteUpdates(app, (app as SynchrotronApp).updater, viewModelScope) {
+        if (progress.value.isNotEmpty()) "Attends la fin de la synchro en cours, puis touche « Installer »." else null
+    }
 
     fun refreshSession() {
         _loggedIn.value = engine.hasSession
@@ -157,30 +149,4 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         File(path).listFiles { f -> f.isDirectory && !f.name.startsWith(".") }?.sortedBy { it.name.lowercase() } ?: emptyList()
 
     val storageRoot: String get() = Environment.getExternalStorageDirectory().absolutePath
-
-    // ---- updates ----
-
-    fun checkUpdate() {
-        if (update.value is UpdateState.Checking || update.value is UpdateState.Downloading) return
-        update.value = UpdateState.Checking
-        viewModelScope.launch {
-            update.value = try {
-                Updater.check()?.let { UpdateState.Available(it) } ?: UpdateState.UpToDate
-            } catch (e: Exception) {
-                UpdateState.Failed("Vérification impossible")
-            }
-        }
-    }
-
-    fun downloadUpdate(info: UpdateInfo) {
-        update.value = UpdateState.Downloading(info, 0f)
-        viewModelScope.launch {
-            update.value = try {
-                val apk = Updater.download(getApplication(), info) { p -> update.value = UpdateState.Downloading(info, p) }
-                UpdateState.Ready(info, apk)
-            } catch (e: Exception) {
-                UpdateState.Failed(e.message ?: "Téléchargement impossible")
-            }
-        }
-    }
 }

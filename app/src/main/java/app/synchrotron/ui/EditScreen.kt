@@ -1,5 +1,6 @@
 package app.synchrotron.ui
 
+import app.synchrotron.suite.SectionTitle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow

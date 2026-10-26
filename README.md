@@ -80,6 +80,11 @@ Shared rules:
   tonal-spot recipe from the accent (`SuitePalette.kt`), the same rounded shapes, and a launcher
   icon in the same style: diagonal gradient of the accent, white glyph with one light detail,
   monochrome layer for themed icons. The Windows apps use the same palette and icon.
+- **Suite kit**: `app/src/main/java/app/synchrotron/suite/` is copied as is (package line aside) into
+  every app: `SuiteUpdater` + `SuiteUpdates` (quiet check on open, banner with download progress and
+  install, manual check in Settings), and `SuiteUi` (`SuiteBanner` for states under the top bar,
+  `SuiteTopBar`, settings sections and cards, `ConfirmDialog`). Short confirmations ("Note
+  supprimée · Annuler") are snackbars; dialogs are only for destructive choices.
 - **Builds**: AGP 8.9.1, Kotlin 2.1.20, Compose BOM 2025.04.01, minSdk 26 / target 35; every push to
   `main` publishes a release build to the rolling `latest` release, and each app updates itself
   from it. Signing keys never change.

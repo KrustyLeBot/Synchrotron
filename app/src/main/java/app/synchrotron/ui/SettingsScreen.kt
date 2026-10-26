@@ -35,7 +35,11 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import app.synchrotron.AppViewModel
 import app.synchrotron.BuildConfig
-import app.synchrotron.UpdateState
+import app.synchrotron.suite.AboutSettings
+import app.synchrotron.suite.ConfirmDialog
+import app.synchrotron.suite.SectionTitle
+import app.synchrotron.suite.SettingsCard
+import app.synchrotron.suite.UpdateSettings
 import app.synchrotron.security.BiometricLock
 import app.synchrotron.security.Prefs
 import kotlinx.coroutines.launch
@@ -61,8 +65,7 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
                 else Button(onClick = onLogin) { Text("Se reconnecter") }
             }
 
-            SectionTitle("Mises à jour")
-            UpdateCard(vm, alwaysVisible = true)
+            UpdateSettings(vm.updates)
 
             SectionTitle("Sécurité")
             SettingsCard {
@@ -120,29 +123,20 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
                 }) { Text("Exporter les logs") }
             }
 
-            SectionTitle("À propos")
-            Text(
+            AboutSettings(
+                "Synchrotron",
                 "Application tierce, non officiellement supportée par Proton. Synchronisation par rclone (backend Proton Drive, en bêta : une évolution côté Proton peut la casser temporairement).",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Gap(32)
         }
     }
 
     if (confirmLogout) {
-        AlertDialog(
-            onDismissRequest = { confirmLogout = false },
-            title = { Text("Se déconnecter ?") },
-            text = { Text("Les synchronisations s'arrêtent jusqu'à la prochaine connexion. Tes fichiers ne sont pas touchés.") },
-            confirmButton = { TextButton(onClick = { vm.logout(); confirmLogout = false; onLoggedOut() }) { Text("Se déconnecter") } },
-            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Annuler") } },
+        ConfirmDialog(
+            "Se déconnecter ?",
+            "Les synchronisations s'arrêtent jusqu'à la prochaine connexion. Tes fichiers ne sont pas touchés.",
+            "Se déconnecter", onConfirm = { vm.logout(); onLoggedOut() }, onDismiss = { confirmLogout = false }, destructive = true,
         )
     }
 }
 
-@Composable
-fun SettingsCard(content: @Composable () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) { content() }
-    }
-}

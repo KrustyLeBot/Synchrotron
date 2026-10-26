@@ -50,7 +50,7 @@ class MainActivity : FragmentActivity() {
             }
         }
         applySecureFlag()
-        vm.checkUpdate()
+        vm.updates.checkOnOpen()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

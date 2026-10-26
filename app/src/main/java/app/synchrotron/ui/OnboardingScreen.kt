@@ -61,7 +61,7 @@ fun OnboardingScreen(vm: AppViewModel, onDone: () -> Unit) {
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            UpdateCard(vm) // updates must be possible before any login
+            app.synchrotron.suite.UpdateBanner(vm.updates, inset = false) // updates must be possible before any login
             androidx.compose.foundation.Image(
                 androidx.compose.ui.res.painterResource(app.synchrotron.R.drawable.ic_logo), null, Modifier.size(88.dp),
             )

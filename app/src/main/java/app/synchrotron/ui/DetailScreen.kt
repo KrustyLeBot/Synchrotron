@@ -1,5 +1,6 @@
 package app.synchrotron.ui
 
+import app.synchrotron.suite.SectionTitle
 import android.content.Intent
 import android.webkit.MimeTypeMap
 import androidx.compose.foundation.clickable
@@ -198,32 +199,21 @@ fun DetailScreen(vm: AppViewModel, pairId: Long, onEdit: (PairEntity) -> Unit, o
     }
 
     if (confirmDelete && p != null) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Supprimer la paire ?") },
-            text = { Text("Les fichiers restent intacts sur le téléphone et sur Proton Drive ; seule la synchronisation s'arrête.") },
-            confirmButton = { TextButton(onClick = { vm.deletePair(p.id); confirmDelete = false; onBack() }) { Text("Supprimer") } },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Annuler") } },
+        app.synchrotron.suite.ConfirmDialog(
+            "Supprimer la paire ?",
+            "Les fichiers restent intacts sur le téléphone et sur Proton Drive ; seule la synchronisation s'arrête.",
+            "Supprimer", onConfirm = { vm.deletePair(p.id); onBack() }, onDismiss = { confirmDelete = false }, destructive = true,
         )
     }
     if (confirmWipe && p != null) {
         val localEmpty = p.lastMessage.startsWith(SyncRunner.MSG_LOCAL_EMPTY)
-        AlertDialog(
-            onDismissRequest = { confirmWipe = false },
-            title = { Text(if (localEmpty) "Vider Proton aussi ?" else "Vider le téléphone aussi ?") },
-            text = {
-                Text(
-                    if (localEmpty) "Tous les fichiers de /${p.remotePath} sur Proton Drive seront supprimés, comme sur le téléphone."
-                    else "Tous les fichiers de ${p.localPath} seront supprimés du téléphone, comme sur Proton Drive."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmWipe = false
-                    vm.syncNow(p.id, resync = true, wipe = if (localEmpty) WIPE_REMOTE else WIPE_LOCAL)
-                }) { Text("Supprimer") }
-            },
-            dismissButton = { TextButton(onClick = { confirmWipe = false }) { Text("Annuler") } },
+        app.synchrotron.suite.ConfirmDialog(
+            if (localEmpty) "Vider Proton aussi ?" else "Vider le téléphone aussi ?",
+            if (localEmpty) "Tous les fichiers de /${p.remotePath} sur Proton Drive seront supprimés, comme sur le téléphone."
+            else "Tous les fichiers de ${p.localPath} seront supprimés du téléphone, comme sur Proton Drive.",
+            "Supprimer",
+            onConfirm = { vm.syncNow(p.id, resync = true, wipe = if (localEmpty) WIPE_REMOTE else WIPE_LOCAL) },
+            onDismiss = { confirmWipe = false }, destructive = true,
         )
     }
     logOf?.let { h ->

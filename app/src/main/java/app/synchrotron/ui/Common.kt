@@ -37,13 +37,8 @@ import app.synchrotron.data.SyncStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BackTopBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) {
-    TopAppBar(
-        title = { Text(title, fontWeight = FontWeight.SemiBold) },
-        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
-        actions = { actions() },
-    )
-}
+fun BackTopBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) =
+    app.synchrotron.suite.SuiteTopBar(title, onBack) { actions() }
 
 @Composable
 fun statusColor(status: SyncStatus): Color = when (status) {
@@ -61,14 +56,6 @@ fun StatusBadge(status: SyncStatus, modifier: Modifier = Modifier) {
         Spacer(Modifier.width(6.dp))
         Text(status.label, style = MaterialTheme.typography.labelLarge, color = statusColor(status))
     }
-}
-
-@Composable
-fun SectionTitle(text: String) {
-    Text(
-        text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 20.dp, bottom = 8.dp),
-    )
 }
 
 /** A radio list where every option explains itself. */

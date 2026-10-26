@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -45,7 +44,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.synchrotron.AppViewModel
-import app.synchrotron.UpdateState
+import app.synchrotron.suite.SuiteBanner
+import app.synchrotron.suite.Tone
+import app.synchrotron.suite.UpdateBanner
 import app.synchrotron.data.PairEntity
 import app.synchrotron.data.SyncStatus
 import app.synchrotron.rclone.Progress
@@ -62,7 +63,6 @@ fun HomeScreen(
     val pairs by vm.pairs.collectAsState()
     val progress by vm.progress.collectAsState()
     val loggedIn by vm.loggedIn.collectAsState()
-    val update by vm.update.collectAsState()
 
     Scaffold(
         topBar = {
@@ -90,22 +90,12 @@ fun HomeScreen(
         ) {
             if (pairs.isNotEmpty()) item { SummaryCard(pairs, progress.size) }
             if (!loggedIn) item {
-                BannerCard(
-                    icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
-                    title = "Session Proton expirée",
-                    text = "Les synchronisations sont en pause.",
-                    action = "Se reconnecter", onAction = onLogin,
-                )
+                SuiteBanner(
+                    "Les synchronisations sont en pause.", tone = Tone.Error, title = "Session Proton expirée",
+                    icon = Icons.Default.Warning, inset = false,
+                ) { TextButton(onClick = onLogin) { Text("Se reconnecter") } }
             }
-            (update as? UpdateState.Available)?.let { u ->
-                item {
-                    BannerCard(
-                        icon = { Icon(Icons.Default.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary) },
-                        title = "Mise à jour disponible", text = "Build ${u.info.build}",
-                        action = "Voir", onAction = onSettings,
-                    )
-                }
-            }
+            if (vm.updates.showBanner) item { UpdateBanner(vm.updates, inset = false) }
             if (pairs.isEmpty()) item { EmptyState() }
             items(pairs, key = { it.id }) { pair ->
                 PairCard(
@@ -114,20 +104,6 @@ fun HomeScreen(
                     onSync = { if (progress.containsKey(pair.id)) vm.cancelSync(pair.id) else if (pair.initialized || pair.mode != app.synchrotron.data.SyncMode.BIDIRECTIONAL) vm.syncNow(pair.id) else onOpenPair(pair.id) },
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun BannerCard(icon: @Composable () -> Unit, title: String, text: String, action: String, onAction: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            icon()
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(title, fontWeight = FontWeight.SemiBold)
-                Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            TextButton(onClick = onAction) { Text(action) }
         }
     }
 }
