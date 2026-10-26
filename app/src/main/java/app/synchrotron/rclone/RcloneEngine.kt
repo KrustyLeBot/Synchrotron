@@ -36,6 +36,7 @@ data class JobResult(val output: String, val transfers: Long, val deletes: Long)
  */
 class RcloneEngine private constructor(private val context: Context) {
     private val vault = ConfigVault(context)
+    private val prefs = context.getSharedPreferences("engine", Context.MODE_PRIVATE)
     private val sessionLock = Mutex()
     private val confFile = File(context.noBackupFilesDir, "rclone.conf")
 
@@ -96,8 +97,9 @@ class RcloneEngine private constructor(private val context: Context) {
                 harvest(creds)
                 result
             } catch (e: Throwable) {
-                runCatching { harvest(creds) }
-                throw e
+                // A dropped session explains the failure better than rclone's own message.
+                val dropped = runCatching { harvest(creds) }.exceptionOrNull()
+                throw if (dropped is SessionExpiredException || dropped is RcloneException) dropped else e
             } finally {
                 closeSession()
             }
@@ -135,11 +137,20 @@ class RcloneEngine private constructor(private val context: Context) {
             kept = KEPT_KEYS.mapNotNull { k -> fromFile[k]?.takeIf { it.isNotEmpty() }?.let { k to it } }.toMap()
         }
         if (kept["client_access_token"] == null) {
-            // rclone drops the tokens itself when Proton rejects them.
+            // rclone drops the tokens whenever opening Proton with them fails, a network hiccup included
+            // ("username and password are required" follows). One failure is not a revoked session: the
+            // saved tokens stay for the next sync, and only repeated drops ask for a new login.
             dropRemotes()
-            vault.clear()
-            throw SessionExpiredException("Session Proton expirée")
+            val drops = prefs.getInt(KEY_TOKEN_DROPS, 0) + 1
+            if (before == null || drops >= MAX_TOKEN_DROPS) {
+                prefs.edit().remove(KEY_TOKEN_DROPS).apply()
+                vault.clear()
+                throw SessionExpiredException("Session Proton expirée")
+            }
+            prefs.edit().putInt(KEY_TOKEN_DROPS, drops).apply()
+            throw RcloneException(0, "Proton injoignable pour l'instant ; nouvel essai à la prochaine synchro")
         }
+        prefs.edit().remove(KEY_TOKEN_DROPS).apply()
         if (before != null && kept["client_refresh_token"] != before["client_refresh_token"]) {
             // Proton rotated the refresh token: other open remotes still hold the old one and would get
             // the session revoked when they refresh. Drop them; they reconnect with the new tokens.
@@ -272,6 +283,8 @@ class RcloneEngine private constructor(private val context: Context) {
 
     companion object {
         const val REMOTE = "proton"
+        private const val KEY_TOKEN_DROPS = "token_drops"
+        private const val MAX_TOKEN_DROPS = 3
         private val KEPT_KEYS = listOf(
             "username", "client_uid", "client_access_token", "client_refresh_token", "client_salted_key_pass",
         )

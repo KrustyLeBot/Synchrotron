@@ -13,7 +13,6 @@ import app.synchrotron.notify.Notifier
 import app.synchrotron.rclone.RcloneEngine
 import app.synchrotron.rclone.RcloneException
 import app.synchrotron.rclone.SessionExpiredException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlin.coroutines.coroutineContext
@@ -129,13 +128,6 @@ class SyncRunner(private val context: Context) {
                         engine.dropRemotes()
                         engine.mkdirRoot(remote)
                     }
-                    // Another client (Proton's own app on a PC) wrote the same file at the same moment: the
-                    // next attempt sees its version, so give it a few seconds and try once more.
-                    msg.contains("already exist", ignoreCase = true) || msg.contains("Code=2500") -> {
-                        delay(5_000)
-                        engine.dropRemotes()
-                        engine.connect(remote)
-                    }
                     else -> throw e
                 }
                 transfer()
@@ -246,7 +238,14 @@ class SyncRunner(private val context: Context) {
         const val MSG_LOCAL_EMPTY = "Le dossier du téléphone est entièrement vide."
         const val MSG_REMOTE_EMPTY = "Le dossier Proton est entièrement vide."
 
-        fun clean(s: String) = s.replace(ansi, "").take(8000)
+        /**
+         * Updating a file that already exists on Proton makes rclone's Proton library try to create it,
+         * get "already exists" (Code=2500) and then upload a new revision: logged as an ERROR, it is
+         * the normal path and the upload succeeds, so those lines are dropped.
+         */
+        private val benign = Regex("""(?m)^.*Code=2500, Status=422.*\n?""")
+
+        fun clean(s: String) = s.replace(ansi, "").replace(benign, "").take(8000)
 
         /** Bisync lost its baseline (crash, changed filters, first run failed): a resync rebuilds it without deleting. */
         fun needsResync(msg: String) = Regex(
