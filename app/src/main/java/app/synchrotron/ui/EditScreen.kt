@@ -78,7 +78,8 @@ fun EditScreen(vm: AppViewModel, onPickLocal: () -> Unit, onPickRemote: () -> Un
             SectionTitle("Exclusions")
             OutlinedTextField(
                 d.exclusions, { vm.draft.value = d.copy(exclusions = it) }, modifier = Modifier.fillMaxWidth(), minLines = 3,
-                label = { Text("Un motif par ligne") }, placeholder = { Text("*.tmp\n.cache/") },
+                label = { Text("Un motif par ligne") }, placeholder = { Text("*.log\n.cache/") },
+                supportingText = { Text("S'ajoutent au fichier .syncignore du dossier, s'il existe. *.tmp et *.part sont toujours exclus.") },
             )
 
             if (d.mode == SyncMode.BIDIRECTIONAL) {

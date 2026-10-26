@@ -67,7 +67,10 @@ Synchrotron is the sync hub of a small suite of personal apps, built the same wa
 Shared rules:
 
 - **Data in plain files** in a public folder (JSON or Markdown), written atomically (`*.tmp` then
-  rename; `*.tmp` and `*.part` are always excluded from the sync). An unreadable file is reported and never overwritten.
+  rename; `*.tmp` and `*.part` are always excluded from the sync). An app can leave other files out
+  with a `.syncignore` at the root of its folder: one pattern per line, gitignore-style (`*.log`,
+  `cache/`, `/top-only`, `#` comments; no `!` negations), added to the pair's own exclusions.
+  Changing it makes the next sync a resync (newer file wins), which is automatic. An unreadable file is reported and never overwritten.
   Device-only state (caches, the phone position, UI preferences) stays private and out of the sync.
 - **Sync on open**: each app embeds a copy of `client/` (`SynchrotronClient`), asks for a sync when
   it opens, shows its data read-only with a banner while it runs and re-reads it afterwards. The

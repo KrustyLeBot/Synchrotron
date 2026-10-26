@@ -249,8 +249,19 @@ class SyncRunner(private val context: Context) {
             return (errors.firstOrNull() ?: lines.lastOrNull { !it.contains("retryable", true) } ?: "Erreur inconnue").take(300)
         }
 
+        /** Name of the gitignore-like file an app can put at the root of its folder; it is synced too. */
+        const val IGNORE_FILE = ".syncignore"
+
         fun patterns(pair: PairEntity): List<String> =
-            builtinExcludes + pair.exclusions.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+            builtinExcludes + rules(pair.exclusions) + rules(runCatching { File(pair.localPath, IGNORE_FILE).readText() }.getOrDefault(""))
+
+        /**
+         * One rclone exclude pattern per line; blank lines and `#` comments are skipped. rclone's syntax
+         * is gitignore's for the usual cases (`*.log`, `cache/`, `/top-level-only`, `**`); negations
+         * (`!keep`) are not supported and skipped.
+         */
+        private fun rules(text: String): List<String> =
+            text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("!") }
 
         fun filterJson(pair: PairEntity): JSONObject =
             JSONObject().put("ExcludeRule", JSONArray(patterns(pair)))
