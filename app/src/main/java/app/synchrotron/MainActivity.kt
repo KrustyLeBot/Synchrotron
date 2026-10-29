@@ -150,7 +150,7 @@ private fun App(vm: AppViewModel, openPair: MutableStateFlow<Long?>) {
                     vm.draft.value = draft.copy(
                         localPath = path,
                         name = draft.name.ifBlank { java.io.File(path).name },
-                        remotePath = if (draft.remotePath.isBlank()) "Synchrotron/" + java.io.File(path).name else draft.remotePath,
+                        remotePath = draft.remotePath.ifBlank { vm.defaultRemote(java.io.File(path).name) },
                     )
                     nav.popBackStack()
                 },
@@ -160,7 +160,9 @@ private fun App(vm: AppViewModel, openPair: MutableStateFlow<Long?>) {
         composable("pick-remote") {
             val draft by vm.draft.collectAsState()
             FolderPicker(
-                title = "Dossier ${vm.backendLabel}", root = "", initial = draft.remotePath, rootLabel = vm.backendLabel,
+                // Opens on the folder that holds the chosen one: it shows in the list, and a path that does
+                // not exist yet never leaves the picker on an empty, failing listing.
+                title = "Dossier ${vm.backendLabel}", root = "", initial = draft.remotePath.substringBeforeLast('/', ""), rootLabel = vm.backendLabel,
                 list = { path ->
                     vm.remoteDirs(path).map { dirs -> dirs.map { FolderItem(it.name, if (path.isEmpty()) it.name else "$path/${it.name}") } }
                 },

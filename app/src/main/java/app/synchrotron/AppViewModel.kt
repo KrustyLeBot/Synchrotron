@@ -127,6 +127,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         refreshSession()
     }
 
+    /**
+     * Where a new folder goes by default: at the root of the Synchrotron server (its folders sit there,
+     * one per app), under Synchrotron/ on Proton Drive. Another folder can be picked afterwards.
+     */
+    fun defaultRemote(name: String): String = when (Backends.current(getApplication())) {
+        Backend.SERVER -> name
+        Backend.PROTON -> "Synchrotron/$name"
+    }
+
     fun newDraft(): PairEntity = PairEntity(name = "", localPath = "", remotePath = "")
 
     fun startDraft(pair: PairEntity?) {

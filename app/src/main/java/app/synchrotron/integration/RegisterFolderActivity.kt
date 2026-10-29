@@ -158,8 +158,10 @@ class RegisterFolderActivity : FragmentActivity() {
     }
 
     private fun sanitizeRemote(requested: String?, appName: String): String {
-        val raw = requested?.takeIf { it.isNotBlank() } ?: "Apps/$appName"
+        // On the Synchrotron server each app's folder sits at the root; on Proton Drive under Apps/.
+        val default = if (Backends.current(this) == app.synchrotron.remote.Backend.SERVER) appName else "Apps/$appName"
+        val raw = requested?.takeIf { it.isNotBlank() } ?: default
         return raw.split('/').map { it.trim() }.filter { it.isNotEmpty() && it != "." && it != ".." }
-            .joinToString("/").ifEmpty { "Apps/$appName" }
+            .joinToString("/").ifEmpty { default }
     }
 }
