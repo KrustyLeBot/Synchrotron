@@ -86,10 +86,25 @@ private fun Field(
     label: String, value: String, secret: Boolean = false, keyboard: KeyboardType = KeyboardType.Text,
     hint: String? = null, onChange: (String) -> Unit,
 ) {
+    // Secrets can be shown: a keyboard that changes a character is the usual cause of a refused login.
+    var shown by remember { mutableStateOf(false) }
     OutlinedTextField(
         value, onChange, label = { Text(label) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-        visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard, autoCorrectEnabled = false),
+        visualTransformation = if (secret && !shown) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (secret) KeyboardType.Password else keyboard, autoCorrectEnabled = false,
+            capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.None,
+        ),
+        trailingIcon = if (secret) {
+            {
+                androidx.compose.material3.IconButton(onClick = { shown = !shown }) {
+                    androidx.compose.material3.Icon(
+                        if (shown) androidx.compose.material.icons.Icons.Default.VisibilityOff else androidx.compose.material.icons.Icons.Default.Visibility,
+                        if (shown) "Masquer" else "Afficher",
+                    )
+                }
+            }
+        } else null,
         supportingText = if (hint != null) { { Text(hint) } } else null,
     )
 }
