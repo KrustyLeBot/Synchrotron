@@ -69,7 +69,7 @@ fun OnboardingScreen(vm: AppViewModel, onDone: () -> Unit) {
             when (step) {
                 0 -> {
                     Text(
-                        "Synchronise des dossiers de ton téléphone avec Proton Drive, dans les deux sens.",
+                        "Synchronise des dossiers de ton téléphone avec Proton Drive ou ton serveur Synchrotron, dans les deux sens.",
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
@@ -107,7 +107,24 @@ fun OnboardingScreen(vm: AppViewModel, onDone: () -> Unit) {
                     }
                     Button(onClick = { step = 2 }, enabled = filesOk, modifier = Modifier.fillMaxWidth()) { Text("Continuer") }
                 }
-                else -> LoginForm(vm, onDone)
+                else -> {
+                    var choice by remember { mutableStateOf(vm.backend.value) }
+                    Text("Où synchroniser ?", style = MaterialTheme.typography.titleLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        app.synchrotron.remote.Backend.entries.forEach { b ->
+                            androidx.compose.material3.FilterChip(selected = choice == b, onClick = { choice = b }, label = { Text(b.label) })
+                        }
+                    }
+                    val finish = {
+                        if (choice != vm.backend.value) vm.switchBackend(choice)
+                        onDone()
+                    }
+                    if (choice == app.synchrotron.remote.Backend.PROTON) LoginForm(vm, finish)
+                    else {
+                        Text("Serveur Synchrotron", style = MaterialTheme.typography.titleLarge)
+                        ServerForm(vm, saveLabel = "Continuer") { finish() }
+                    }
+                }
             }
         }
     }

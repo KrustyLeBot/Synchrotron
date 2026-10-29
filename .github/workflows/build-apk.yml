@@ -37,10 +37,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: app/libs/librclone.aar
-          key: librclone-${{ hashFiles('rclone-bridge/go.mod', 'rclone-bridge/go.sum', 'rclone-bridge/bridge/bridge.go', 'scripts/build-librclone.sh') }}
+          key: librclone-${{ hashFiles('rclone-bridge/go.mod', 'rclone-bridge/go.sum', 'rclone-bridge/**/*.go', 'scripts/build-librclone.sh') }}
 
       - name: Test the rclone bridge
-        run: cd rclone-bridge && go test ./bridge/
+        run: cd rclone-bridge && go test ./bridge/ ./davsync/
 
       - name: Build librclone.aar (gomobile)
         if: steps.aar-cache.outputs.cache-hit != 'true'

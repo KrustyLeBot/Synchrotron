@@ -74,6 +74,14 @@ object Notifier {
             .setContentIntent(open(context, null)).setAutoCancel(true).build())
     }
 
+    /** The Synchrotron server refuses the settings (or they are missing): syncs are on hold until fixed. */
+    fun serverProblem(context: Context, message: String) {
+        notify(context, ID_SESSION, NotificationCompat.Builder(context, CH_PROBLEMS)
+            .setSmallIcon(R.drawable.ic_stat_sync).setContentTitle("Vérifie les réglages du serveur")
+            .setContentText(message).setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentIntent(open(context, null)).setAutoCancel(true).build())
+    }
+
     fun updateAvailable(context: Context, build: Int) {
         notify(context, ID_UPDATE, NotificationCompat.Builder(context, CH_PROBLEMS)
             .setSmallIcon(R.drawable.ic_stat_sync).setContentTitle("Mise à jour disponible")

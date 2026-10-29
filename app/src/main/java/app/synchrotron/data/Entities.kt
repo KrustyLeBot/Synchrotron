@@ -6,15 +6,15 @@ import androidx.room.PrimaryKey
 
 enum class SyncMode(val label: String, val hint: String) {
     BIDIRECTIONAL("Bidirectionnel", "Les changements passent dans les deux sens"),
-    UPLOAD_ONLY("Envoi seul", "Sauvegarde le téléphone vers Proton, ne supprime rien"),
-    DOWNLOAD_ONLY("Réception seule", "Récupère depuis Proton, ne supprime rien"),
+    UPLOAD_ONLY("Envoi seul", "Sauvegarde le téléphone vers le cloud, ne supprime rien"),
+    DOWNLOAD_ONLY("Réception seule", "Récupère depuis le cloud, ne supprime rien"),
 }
 
 enum class ConflictPolicy(val label: String, val hint: String, val rclone: String) {
     KEEP_BOTH("Garder les deux", "Les deux versions sont conservées (.conflict1 / .conflict2)", "none"),
     NEWER("Le plus récent gagne", "L'autre version est conservée en .conflict", "newer"),
-    LOCAL("Le téléphone gagne", "La version Proton est conservée en .conflict", "path1"),
-    REMOTE("Proton gagne", "La version du téléphone est conservée en .conflict", "path2"),
+    LOCAL("Le téléphone gagne", "La version du cloud est conservée en .conflict", "path1"),
+    REMOTE("Le cloud gagne", "La version du téléphone est conservée en .conflict", "path2"),
 }
 
 enum class SyncStatus(val label: String) {
@@ -31,7 +31,7 @@ data class PairEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val localPath: String,
-    /** Path inside the Proton Drive, without leading slash ("" = root). */
+    /** Path inside the Proton Drive or on the Synchrotron server (same tree on both), without leading slash. */
     val remotePath: String,
     val mode: SyncMode = SyncMode.BIDIRECTIONAL,
     val conflictPolicy: ConflictPolicy = ConflictPolicy.KEEP_BOTH,

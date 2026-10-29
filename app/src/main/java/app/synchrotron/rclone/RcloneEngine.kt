@@ -108,6 +108,20 @@ class RcloneEngine private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Runs [block] alone, like [session] but without the Proton credentials: used by the Synchrotron
+     * server backend, whose settings travel with each call.
+     */
+    suspend fun <T> exclusive(onLocked: () -> Unit = {}, block: suspend () -> T): T = sessionLock.withLock {
+        onLocked()
+        _busy.value = true
+        try {
+            block()
+        } finally {
+            _busy.value = false
+        }
+    }
+
     private suspend fun openSession(values: Map<String, String>) {
         writeConf(values)
         rpc("config/setpath", JSONObject().put("path", confFile.absolutePath))

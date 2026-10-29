@@ -62,7 +62,7 @@ fun HomeScreen(
 ) {
     val pairs by vm.pairs.collectAsState()
     val progress by vm.progress.collectAsState()
-    val loggedIn by vm.loggedIn.collectAsState()
+    val loggedIn by vm.ready.collectAsState()
 
     Scaffold(
         topBar = {
@@ -91,9 +91,14 @@ fun HomeScreen(
             if (pairs.isNotEmpty()) item { SummaryCard(pairs, progress.size) }
             if (!loggedIn) item {
                 SuiteBanner(
-                    "Les synchronisations sont en pause.", tone = Tone.Error, title = "Session Proton expirée",
+                    "Les synchronisations sont en pause.", tone = Tone.Error,
+                    title = if (vm.backend.value == app.synchrotron.remote.Backend.PROTON) "Session Proton expirée" else "Serveur non configuré",
                     icon = Icons.Default.Warning, inset = false,
-                ) { TextButton(onClick = onLogin) { Text("Se reconnecter") } }
+                ) {
+                    TextButton(onClick = onLogin) {
+                        Text(if (vm.backend.value == app.synchrotron.remote.Backend.PROTON) "Se reconnecter" else "Configurer")
+                    }
+                }
             }
             if (vm.updates.showBanner) item { UpdateBanner(vm.updates, inset = false) }
             if (pairs.isEmpty()) item { EmptyState() }
@@ -117,7 +122,7 @@ private fun EmptyState() {
         )
         Text("Aucune paire pour l'instant", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Une paire relie un dossier du téléphone à un dossier Proton Drive.",
+            "Une paire relie un dossier du téléphone à un dossier dans le cloud (Proton Drive ou ton serveur).",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp, start = 32.dp, end = 32.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,

@@ -30,7 +30,7 @@ import app.synchrotron.MainActivity
 import app.synchrotron.data.AppDb
 import app.synchrotron.data.ConflictPolicy
 import app.synchrotron.data.PairEntity
-import app.synchrotron.rclone.RcloneEngine
+import app.synchrotron.remote.Backends
 import app.synchrotron.sync.Scheduler
 import app.synchrotron.ui.SynchrotronTheme
 import kotlinx.coroutines.launch
@@ -38,7 +38,7 @@ import java.io.File
 
 /**
  * REGISTER_FOLDER: another app proposes a folder to sync. Nothing happens until the user confirms
- * here, with the local folder and the Proton path in plain sight.
+ * here, with the local folder and the remote path in plain sight.
  *
  * Extras: `local_path` (absolute, inside shared storage), `app_name`, optional `remote_path`.
  */
@@ -60,7 +60,8 @@ class RegisterFolderActivity : FragmentActivity() {
         val remote = sanitizeRemote(intent.getStringExtra("remote_path"), appName ?: local?.name ?: "App")
         val caller = referrer?.takeIf { it.scheme == "android-app" }?.host ?: callingActivity?.packageName
         val defaults = Defaults.from(intent)
-        val loggedIn = RcloneEngine.get(this).hasSession
+        val loggedIn = Backends.ready(this)
+        val backend = Backends.current(this).label
 
         setContent {
             SynchrotronTheme {
@@ -72,7 +73,7 @@ class RegisterFolderActivity : FragmentActivity() {
                                 Text("Le dossier doit se trouver dans le stockage partagé du téléphone.")
                                 Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth()) { Text("Fermer") }
                             } else {
-                                Request(appName, local!!, remote, defaults, loggedIn, onConfirm = { confirm(appName, local, remote, defaults, caller) }, onCancel = {
+                                Request(appName, local!!, remote, backend, defaults, loggedIn, onConfirm = { confirm(appName, local, remote, defaults, caller) }, onCancel = {
                                     setResult(RESULT_CANCELED); finish()
                                 })
                             }
@@ -84,16 +85,16 @@ class RegisterFolderActivity : FragmentActivity() {
     }
 
     @Composable
-    private fun Request(appName: String, local: File, remote: String, defaults: Defaults, loggedIn: Boolean, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    private fun Request(appName: String, local: File, remote: String, backend: String, defaults: Defaults, loggedIn: Boolean, onConfirm: () -> Unit, onCancel: () -> Unit) {
         Text("$appName veut synchroniser un dossier", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Text("Téléphone", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(local.path)
-        Text("Proton Drive", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(backend, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("/$remote")
         Text("Réglages proposés", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(defaults.summary())
         if (!loggedIn) {
-            Text("Connecte-toi d'abord à Proton dans Synchrotron.", color = MaterialTheme.colorScheme.error)
+            Text("Configure d'abord $backend dans Synchrotron.", color = MaterialTheme.colorScheme.error)
             Button(onClick = { startActivity(Intent(this@RegisterFolderActivity, MainActivity::class.java)); finish() }, modifier = Modifier.fillMaxWidth()) {
                 Text("Ouvrir Synchrotron")
             }

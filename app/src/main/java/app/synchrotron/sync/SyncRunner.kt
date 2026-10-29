@@ -13,6 +13,10 @@ import app.synchrotron.notify.Notifier
 import app.synchrotron.rclone.RcloneEngine
 import app.synchrotron.rclone.RcloneException
 import app.synchrotron.rclone.SessionExpiredException
+import app.synchrotron.remote.Backend
+import app.synchrotron.remote.Backends
+import app.synchrotron.remote.ServerException
+import app.synchrotron.remote.ServerRemote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlin.coroutines.coroutineContext
@@ -38,17 +42,22 @@ class SyncRunner(private val context: Context) {
     private val engine = RcloneEngine.get(context)
     private val db = AppDb.get(context)
 
-    suspend fun run(pairId: Long, options: SyncOptions = SyncOptions(), onProgress: suspend (app.synchrotron.rclone.Progress) -> Unit = {}) {
-        val pair = db.pairs().get(pairId) ?: return SyncRegistry.emitFinished(pairId, SyncStatus.ERROR, 0)
-        if (SyncRegistry.isRunning(pairId)) return
+    /** Returns true when the sync failed for a reason that may go away by itself (server offline): retry later. */
+    suspend fun run(pairId: Long, options: SyncOptions = SyncOptions(), onProgress: suspend (app.synchrotron.rclone.Progress) -> Unit = {}): Boolean {
+        val pair = db.pairs().get(pairId) ?: return false.also { SyncRegistry.emitFinished(pairId, SyncStatus.ERROR, 0) }
+        if (SyncRegistry.isRunning(pairId)) return false
         val started = System.currentTimeMillis()
+        val backend = Backends.current(context)
 
         fun fail(status: SyncStatus, message: String) = Outcome(status, message, 0, "")
 
         val outcome: Outcome = when {
             pair.mode == SyncMode.BIDIRECTIONAL && !pair.initialized && !options.resync ->
-                return // the first sync needs the user's confirmation in the app
-            !engine.hasSession -> fail(SyncStatus.ERROR, "Reconnecte-toi à Proton").also { Notifier.sessionExpired(context) }
+                return false // the first sync needs the user's confirmation in the app
+            !Backends.ready(context) -> when (backend) {
+                Backend.PROTON -> fail(SyncStatus.ERROR, "Reconnecte-toi à Proton").also { Notifier.sessionExpired(context) }
+                Backend.SERVER -> fail(SyncStatus.ERROR, "Serveur Synchrotron non configuré").also { Notifier.serverProblem(context, it.message) }
+            }
             !Environment.isExternalStorageManager() && pair.localPath.startsWith("/storage") ->
                 fail(SyncStatus.ERROR, "Accès à tous les fichiers non accordé")
             !File(pair.localPath).isDirectory -> fail(SyncStatus.ERROR, "Dossier local introuvable")
@@ -56,7 +65,11 @@ class SyncRunner(private val context: Context) {
                 SyncRegistry.start(pairId, coroutineContext[Job])
                 db.pairs().setStatus(pairId, SyncStatus.RUNNING, "")
                 try {
-                    execute(pair, options, started) { SyncRegistry.update(pairId, it); onProgress(it) }
+                    val progress: suspend (app.synchrotron.rclone.Progress) -> Unit = { SyncRegistry.update(pairId, it); onProgress(it) }
+                    when (backend) {
+                        Backend.PROTON -> execute(pair, options, started, progress)
+                        Backend.SERVER -> executeServer(pair, options, started, progress)
+                    }
                 } catch (e: CancellationException) {
                     db.pairs().setStatus(pairId, SyncStatus.ERROR, "Annulée")
                     SyncRegistry.finish(pairId)
@@ -64,6 +77,8 @@ class SyncRunner(private val context: Context) {
                 } catch (e: SessionExpiredException) {
                     Notifier.sessionExpired(context)
                     fail(SyncStatus.ERROR, "Session Proton expirée : reconnecte-toi")
+                } catch (e: ServerException) {
+                    serverFailure(e.kind, e.message.orEmpty(), "")
                 } catch (e: RcloneException) {
                     classify(e.message.orEmpty())
                 } catch (e: Exception) {
@@ -85,16 +100,73 @@ class SyncRunner(private val context: Context) {
         )
         db.history().trim(pairId)
 
-        when (outcome.status) {
-            SyncStatus.ERROR, SyncStatus.BLOCKED -> Notifier.problem(context, pair, outcome.status, outcome.message)
-            SyncStatus.CONFLICTS -> Notifier.conflicts(context, pair, outcome.message)
+        when {
+            outcome.retry -> Unit // the server is off or unreachable for now: no alert, a retry follows
+            outcome.status == SyncStatus.ERROR && outcome.serverSettings -> Notifier.serverProblem(context, outcome.message)
+            outcome.status == SyncStatus.ERROR || outcome.status == SyncStatus.BLOCKED ->
+                Notifier.problem(context, pair, outcome.status, outcome.message)
+            outcome.status == SyncStatus.CONFLICTS -> Notifier.conflicts(context, pair, outcome.message)
             else -> Notifier.clear(context, pair)
         }
         SyncRegistry.emitFinished(pairId, outcome.status, outcome.changes)
         Integration.broadcastFinished(context, pair, outcome.status, outcome.changes)
+        return outcome.retry
     }
 
-    private class Outcome(val status: SyncStatus, val message: String, val changes: Int, val log: String)
+    private class Outcome(
+        val status: SyncStatus, val message: String, val changes: Int, val log: String,
+        /** Transient server failure: retried later, without alerting. */
+        val retry: Boolean = false,
+        /** The server refused the settings (credentials, Cloudflare token): the fix is in the settings. */
+        val serverSettings: Boolean = false,
+    )
+
+    private suspend fun executeServer(
+        pair: PairEntity, options: SyncOptions, started: Long,
+        onProgress: suspend (app.synchrotron.rclone.Progress) -> Unit,
+    ): Outcome {
+        val waited = started - options.requestedAt
+        var mark = SystemClock.elapsedRealtime()
+        fun lap(): Long = SystemClock.elapsedRealtime().let { now -> (now - mark).also { mark = now } }
+        var queued = 0L
+        // A resync (first sync, "restore") forgets the known state: comparing contents never deletes.
+        // Mirroring an emptied side needs that state to know what to delete.
+        if (options.resync && options.wipe == 0) Backends.serverState(context, pair.id).delete()
+        return engine.exclusive(onLocked = { queued = lap() }) {
+            val result = try {
+                ServerRemote(context).sync(
+                    pair, patterns(pair), force = options.force || options.wipe != 0, allowEmpty = options.wipe != 0,
+                    group = "pair-${pair.id}", onProgress = onProgress,
+                )
+            } catch (e: RcloneException) {
+                val msg = e.message.orEmpty()
+                val kind = ServerRemote.kindOf(msg)
+                if (kind != null && kind != "toolarge") return@exclusive serverFailure(kind, ServerRemote.translate(msg).message.orEmpty(), msg)
+                throw e
+            }
+            val timings = "Durées : démarrage ${secs(waited)} · file d'attente ${secs(queued)} · synchro ${secs(lap())}"
+            outcome(pair, result, timings)
+        }
+    }
+
+    private fun serverFailure(kind: String, message: String, log: String) = Outcome(
+        SyncStatus.ERROR, message, 0, clean(log),
+        retry = kind == "offline" || kind == "transient",
+        serverSettings = kind == "auth" || kind == "access" || kind == "setup",
+    )
+
+    private fun outcome(pair: PairEntity, result: app.synchrotron.rclone.JobResult, timings: String): Outcome {
+        val conflicts = ConflictScanner.scan(File(pair.localPath)).size
+        val changes = (result.transfers + result.deletes).toInt()
+        val message = buildString {
+            append(if (changes == 0) "Rien à synchroniser" else "$changes changement${if (changes > 1) "s" else ""}")
+            if (conflicts > 0) append(" · $conflicts conflit${if (conflicts > 1) "s" else ""}")
+        }
+        return Outcome(
+            if (conflicts > 0) SyncStatus.CONFLICTS else SyncStatus.OK, message, changes,
+            timings + "\n" + clean(result.output),
+        )
+    }
 
     private suspend fun execute(
         pair: PairEntity, options: SyncOptions, started: Long,
@@ -135,16 +207,7 @@ class SyncRunner(private val context: Context) {
             val synced = lap()
             val timings = "Durées : démarrage ${secs(waited)} · file d'attente ${secs(queued)} · moteur ${secs(opened)} · " +
                 "Proton ${secs(connected)} · synchro ${secs(synced)}"
-            val conflicts = ConflictScanner.scan(File(pair.localPath)).size
-            val changes = (result.transfers + result.deletes).toInt()
-            val message = buildString {
-                append(if (changes == 0) "Rien à synchroniser" else "$changes changement${if (changes > 1) "s" else ""}")
-                if (conflicts > 0) append(" · $conflicts conflit${if (conflicts > 1) "s" else ""}")
-            }
-            Outcome(
-                if (conflicts > 0) SyncStatus.CONFLICTS else SyncStatus.OK, message, changes,
-                timings + "\n" + clean(result.output),
-            )
+            outcome(pair, result, timings)
         }
     }
 
@@ -233,10 +296,10 @@ class SyncRunner(private val context: Context) {
     companion object {
         private val ansi = Regex("\u001B\\[[;\\d]*m")
         // Temporaries of the suite's atomic writes and unfinished downloads are never synced.
-        private val builtinExcludes = listOf(".trashed-*", ".pending-*", ".thumbnails/", "*.tmp", "*.part")
+        private val builtinExcludes = listOf(".trashed-*", ".pending-*", ".thumbnails/", "*.tmp", "*.part", ".*.synctmp-*")
 
         const val MSG_LOCAL_EMPTY = "Le dossier du téléphone est entièrement vide."
-        const val MSG_REMOTE_EMPTY = "Le dossier Proton est entièrement vide."
+        const val MSG_REMOTE_EMPTY = "Le dossier distant est entièrement vide."
 
         /**
          * Updating a file that already exists on Proton makes rclone's Proton library try to create it,

@@ -1,14 +1,16 @@
 # Synchrotron
 
-Bidirectional sync between folders on your Android phone and Proton Drive.
+Bidirectional sync between folders on your Android phone and Proton Drive, or a self-hosted
+**Synchrotron server** (WebDAV on a NAS, behind Cloudflare Access). One backend at a time, chosen in the settings.
 
 > Third-party app, not officially supported by Proton.
 
-- Pairs: phone folder ⇄ Proton Drive folder, with mode (two-way / upload only / download only),
+- Pairs: phone folder ⇄ remote folder, with mode (two-way / upload only / download only),
   conflict policy, exclusions, schedule (WiFi / charging) and optional sync-on-change.
 - Powered by [rclone](https://rclone.org) (`protondrive` backend + `bisync`), embedded through `librclone`.
 - Proton authentication (SRP + 2FA) and end-to-end encryption are done by rclone's Proton client: files are
   encrypted on Proton's servers and in clear on the phone.
+- Synchrotron server backend: Synchrotron's own WebDAV sync engine (`rclone-bridge/davsync`), see below.
 - Other apps can ask Synchrotron to sync their folder with the tiny [`client`](client) library.
 - Updates itself from the rolling `latest` GitHub release.
 
@@ -17,9 +19,39 @@ Bidirectional sync between folders on your Android phone and Proton Drive.
 | Piece | Where |
 |---|---|
 | Android app (Compose, Room, WorkManager) | `app/` |
-| gomobile wrapper around rclone, tests | `rclone-bridge/` (rclone version pinned in `go.mod`) |
+| gomobile wrapper around rclone, tests | `rclone-bridge/bridge` (rclone version pinned in `go.mod`) |
+| WebDAV client + sync engine of the Synchrotron server backend, tests | `rclone-bridge/davsync` |
 | `synchrotron-client` library for other apps | `client/` |
 | CI: build `librclone.aar`, test, sign, publish `latest` | `.github/workflows/build-apk.yml` |
+
+### Synchrotron server backend
+The server is `rclone serve webdav --etag-hash MD5` on the NAS (default address `https://synchrotron.jbrhomelab.com/`),
+behind a Cloudflare Access service token; Windows PCs also write its files directly over SMB. Same folder tree
+as on Proton (`Apps/<App>/…`). Settings: address, user, password, Cloudflare Client ID / Secret and an optional
+LAN address (`http://IP:8090`, used whenever it answers), encrypted with the Keystore (`server.bin`), tested
+with a `PROPFIND Depth: 0` on the root before being saved.
+
+- Every request carries preemptive Basic auth and the `CF-Access-Client-Id/Secret` headers; redirects are never
+  followed (a redirect to `*.cloudflareaccess.com` means a bad token). Folders are listed with `Depth: 1` only.
+- Changes are found by content: the server ETag is the MD5 of the file, compared with the MD5 recorded per file
+  at the last sync (`noBackupFiles/server-state/pair-N.json`; the local MD5 is only recomputed when size or
+  time changed). The server's modification times are upload times and are never used to decide.
+- Uploads go to `.<name>.synctmp-<uuid>` then `MOVE` with `Overwrite: T`, after a `PROPFIND Depth: 0` checks
+  that the target still has the known ETag (the server has no conditional PUT); otherwise it is a conflict.
+  Downloads are written the same way locally (temporary, `fsync`, rename). A `409` creates the parents with
+  `MKCOL`. Leftover `*.synctmp-*` older than an hour are deleted on both sides.
+- Conflicts follow the pair's policy and bisync's naming (`name.conflictN`); deletions are guarded like with
+  bisync (share of deletions, emptied side). A missing or unreadable state never deletes anything: the sync
+  only merges by content. That is also how a backend switch works: the state starts empty, identical files
+  are recognised by their MD5 and nothing is downloaded again.
+- Errors: 401 → check the user/password; 403, redirect or HTML page → check the Cloudflare token (and Bot
+  Fight Mode); 502 / 520–530 / unreachable → offline, retried by WorkManager with a backoff (30 s → 16 min),
+  without alerting; 413 (over ~100 MB) → the file is reported once and skipped until it changes.
+
+```
+cd rclone-bridge && go test ./davsync/                                  # against an in-process WebDAV server
+DAVSYNC_RCLONE=/path/to/rclone go test -run Real ./davsync/            # against the real rclone serve webdav
+```
 
 ### Speed
 - rclone keeps each opened remote (the Proton client with its unlocked keys) for the life of the process,
@@ -56,18 +88,22 @@ val stop = SynchrotronClient.onSyncFinished(context) { reload() }
 
 Synchrotron is the sync hub of a small suite of personal apps, built the same way:
 
-| App | Accent | Local folder (Android) | Proton Drive | Windows |
+| App | Accent | Local folder (Android) | Remote folder | Windows |
 |---|---|---|---|---|
 | Synchrotron | violet `#6D4AFF` | — | — | — |
-| Griffonote (notes) | amber `#F9A825` | folder chosen in the app | `Apps/Griffonote` | Proton's own client syncs the folder |
+| Griffonote (notes) | amber `#F9A825` | folder chosen in the app | `Apps/Griffonote` | the folder synced by Proton's client, or the server's share over SMB |
 | Ecoutify (music) | teal `#1AAE9F` | `Ecoutify/` | `Apps/Ecoutify` | same |
 | Météorite (weather) | blue `#2563EB` | `Documents/Meteorite/` | `Apps/Meteorite` | — |
 | PersonalDashboard | — | `Documents/PersonalDashboard/` | `Apps/PersonalDashboard` | same |
 
 Shared rules:
 
-- **Data in plain files** in a public folder (JSON or Markdown), written atomically (`*.tmp` then
-  rename; `*.tmp` and `*.part` are always excluded from the sync). An app can leave other files out
+- **Data in plain files** in a public folder (JSON or Markdown), written atomically: content to
+  `.<name>.synctmp-<uuid>` in the same folder, flushed and `fsync`ed, then renamed over the file (the
+  temporary is deleted on error). `.*.synctmp-*`, `*.tmp` and `*.part` are always excluded from the sync.
+  Reads are tolerant: a file that fails to parse is read again before being reported (a sync may be
+  replacing it), and the apps re-read their files after each sync (Windows: when the folder changes).
+  No two names differing only by case, no `\ / : * ? " < > |` and no trailing space or dot. An app can leave other files out
   with a `.syncignore` at the root of its folder: one pattern per line, gitignore-style (`*.log`,
   `cache/`, `/top-only`, `#` comments; no `!` negations), added to the pair's own exclusions.
   Changing it makes the next sync a resync (newer file wins), which is automatic. An unreadable file is reported and never overwritten.

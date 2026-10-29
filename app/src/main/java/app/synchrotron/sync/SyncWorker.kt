@@ -30,7 +30,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         // The foreground notification only matters for long syncs; never fail the work because of it.
         runCatching { setForeground(info(Progress())) }
         var lastUpdate = 0L
-        SyncRunner(applicationContext).run(
+        val retry = SyncRunner(applicationContext).run(
             pairId,
             SyncOptions(
                 resync = inputData.getBoolean(KEY_RESYNC, false),
@@ -45,7 +45,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 runCatching { setForeground(info(p)) }
             }
         }
-        return Result.success()
+        // Server off or unreachable: WorkManager tries again with an exponential backoff (see Scheduler).
+        return if (retry && runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()
     }
 
     companion object {
@@ -55,5 +56,6 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         const val KEY_WIPE = "wipe"
         const val KEY_REQUESTED = "requested_at"
         private const val NOTIF_BASE = 5000
+        private const val MAX_RETRIES = 6 // 30 s, 1, 2, 4, 8, 16 min
     }
 }

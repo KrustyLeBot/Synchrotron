@@ -54,7 +54,7 @@ fun EditScreen(vm: AppViewModel, onPickLocal: () -> Unit, onPickRemote: () -> Un
             Gap()
             FolderRow(Icons.Default.Folder, "Téléphone", d.localPath.ifBlank { "Choisir un dossier" }, onPickLocal)
             Gap(8)
-            FolderRow(Icons.Default.Cloud, "Proton Drive", "/" + d.remotePath, onPickRemote)
+            FolderRow(Icons.Default.Cloud, vm.backendLabel, "/" + d.remotePath, onPickRemote)
 
             SectionTitle("Mode")
             ChoiceGroup(SyncMode.entries, d.mode, { it.label }, { it.hint }) { vm.draft.value = d.copy(mode = it) }

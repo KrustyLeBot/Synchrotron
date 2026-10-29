@@ -12,12 +12,13 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Keeps the Proton session (user name + session tokens, never the password) encrypted at rest
- * with an AES-256-GCM key that lives in the Android Keystore and cannot be extracted.
+ * Keeps secrets encrypted at rest with an AES-256-GCM key that lives in the Android Keystore and cannot
+ * be extracted: the Proton session (user name + session tokens, never the password) in `session.bin`,
+ * the Synchrotron server settings in `server.bin`.
  * The decrypted values are kept in memory after the first read: Keystore operations cost tens of ms.
  */
-class ConfigVault(context: Context) {
-    private val file = File(context.noBackupFilesDir, "session.bin")
+class ConfigVault(context: Context, private val name: String = "session") {
+    private val file = File(context.noBackupFilesDir, "$name.bin")
 
     @Volatile private var loaded = false
     @Volatile private var cached: Map<String, String>? = null
@@ -43,7 +44,7 @@ class ConfigVault(context: Context) {
         if (loaded && cached == values) return
         val cipher = Cipher.getInstance(TRANSFORM).apply { init(Cipher.ENCRYPT_MODE, key()) }
         val ct = cipher.doFinal(JSONObject(values).toString().toByteArray())
-        val tmp = File(file.parentFile, "session.tmp")
+        val tmp = File(file.parentFile, "$name.tmp")
         tmp.writeBytes(byteArrayOf(cipher.iv.size.toByte()) + cipher.iv + ct)
         tmp.renameTo(file)
         cached = values

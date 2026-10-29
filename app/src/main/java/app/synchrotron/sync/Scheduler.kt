@@ -1,6 +1,7 @@
 package app.synchrotron.sync
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -31,6 +32,7 @@ object Scheduler {
             .build()
         val request = PeriodicWorkRequestBuilder<SyncWorker>(maxOf(15, pair.intervalMinutes).toLong(), TimeUnit.MINUTES)
             .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .setInputData(workDataOf(SyncWorker.KEY_PAIR to pair.id))
             .build()
         wm.enqueueUniquePeriodicWork(periodicName(pair.id), ExistingPeriodicWorkPolicy.UPDATE, request)
@@ -51,6 +53,7 @@ object Scheduler {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .setInputData(workDataOf(SyncWorker.KEY_PAIR to pairId, SyncWorker.KEY_RESYNC to resync, SyncWorker.KEY_FORCE to force, SyncWorker.KEY_WIPE to wipe,
                 SyncWorker.KEY_REQUESTED to System.currentTimeMillis()))
             .build()

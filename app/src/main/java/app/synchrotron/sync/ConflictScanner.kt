@@ -26,7 +26,7 @@ object ConflictScanner {
     /** Where a copy most likely comes from, given the other copies of the same file. */
     fun origin(copy: ConflictFile, group: List<ConflictFile>): String = when {
         group.any { it.number == copy.number + 1 } -> "version du téléphone"
-        group.any { it.number == copy.number - 1 } -> "version de Proton"
+        group.any { it.number == copy.number - 1 } -> "version du cloud"
         else -> "version écartée"
     }
 }
@@ -34,7 +34,23 @@ object ConflictScanner {
 object ConflictResolver {
     /** Puts [chosen] under the original name (null keeps the current file) and deletes every conflict copy. */
     fun keep(root: File, group: List<ConflictFile>, chosen: ConflictFile?) {
-        if (chosen != null) chosen.file.copyTo(File(root, chosen.originalName), overwrite = true)
+        if (chosen != null) {
+            // Through a temporary: an app or the next sync may read the file meanwhile.
+            val target = File(root, chosen.originalName)
+            val tmp = File(target.parentFile, ".${target.name}.synctmp-${java.util.UUID.randomUUID()}")
+            try {
+                chosen.file.inputStream().use { input ->
+                    java.io.FileOutputStream(tmp).use { out -> input.copyTo(out); out.flush(); out.fd.sync() }
+                }
+                java.nio.file.Files.move(
+                    tmp.toPath(), target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                )
+            } catch (e: Exception) {
+                tmp.delete()
+                throw e
+            }
+        }
         group.forEach { it.file.delete() }
     }
 }

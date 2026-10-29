@@ -36,7 +36,7 @@ Déclenchement : push sur `main`, pull request, ou lancement manuel.
 
 1. **Environnement `release`** : le job l'utilise seulement pour un push sur `main` (sinon aucun environnement). C'est ce qui donne accès aux secrets de signature. L'environnement doit être restreint à la branche `main` (Settings → Environments → release → Deployment branches).
 2. **Tests Go** : ils exécutent le vrai moteur rclone sur des dossiers locaux (bisync, conflits, exclusions, garde-fous). Un test rouge bloque le build.
-3. **`librclone.aar`** : construit par `scripts/build-librclone.sh` (Go + gomobile + NDK, arm64 uniquement). Le résultat est mis en cache avec une clé calculée sur `go.mod`, `go.sum`, `bridge.go` et le script : changer la version de rclone reconstruit le fichier, sinon le build est rapide (~2 min).
+3. **`librclone.aar`** : construit par `scripts/build-librclone.sh` (Go + gomobile + NDK, arm64 uniquement). Le résultat est mis en cache avec une clé calculée sur `go.mod`, `go.sum`, les sources Go de `rclone-bridge/` et le script : changer la version de rclone reconstruit le fichier, sinon le build est rapide (~2 min).
 4. **Décodage de la clé** : le secret `SYNCHROTRON_KEYSTORE_BASE64` est décodé dans un fichier temporaire du runner.
    - Sur `main` : si le secret est absent, le build **échoue** volontairement (on ne publie jamais une release non signée).
    - Sur une pull request : pas d'accès aux secrets, l'APK est signé avec la clé de debug, ne sert que de test (artefact du workflow) et n'est jamais publié.
@@ -97,7 +97,7 @@ Il n'y a pas de rotation transparente avec Android classique : il faut générer
 
 **Publier une nouvelle version** : commit puis `git push origin main`. Environ 2 à 6 minutes plus tard, la release « Synchrotron build N » apparaît. Sur le téléphone : Réglages → Vérifier maintenant → Télécharger → Installer.
 
-**Mettre à jour rclone** : modifier la version dans `rclone-bridge/go.mod` (`go get github.com/rclone/rclone@vX.Y.Z && go mod tidy`), vérifier `go test ./bridge/`, pousser. Le cache de l'AAR est invalidé automatiquement. À faire vite si Proton change son API (le backend Proton de rclone est en bêta).
+**Mettre à jour rclone** : modifier la version dans `rclone-bridge/go.mod` (`go get github.com/rclone/rclone@vX.Y.Z && go mod tidy`), vérifier `go test ./bridge/ ./davsync/`, pousser. Le cache de l'AAR est invalidé automatiquement. À faire vite si Proton change son API (le backend Proton de rclone est en bêta).
 
 **Build local** : `./scripts/build-librclone.sh` (Go, NDK, `ANDROID_NDK_HOME`) puis `./gradlew :app:assembleRelease`. Sans variables de signature, l'APK est signé avec la clé de debug (non utilisable pour les mises à jour).
 

@@ -42,7 +42,7 @@ data class FolderItem(val name: String, val path: String)
 
 /**
  * Generic folder browser. [list] returns the sub-folders of a path, [create] makes a new one.
- * [root] is the topmost folder the user can reach ("" for the Proton Drive root).
+ * [root] is the topmost folder the user can reach ("" for the root of the cloud).
  */
 @Composable
 fun FolderPicker(

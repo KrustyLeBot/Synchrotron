@@ -2,7 +2,8 @@
 //
 // It mirrors rclone's own librclone/gomobile shim, but additionally registers
 // the rc calls Synchrotron needs (sync/bisync, sync/copy, operations/*) and lets
-// the app pass the directories rclone may use before it initialises.
+// the app pass the directories rclone may use before it initialises, and the
+// synchrotron/dav* calls of the Synchrotron server backend (package davsync).
 package bridge
 
 import (
@@ -13,6 +14,8 @@ import (
 	"github.com/rclone/rclone/fs"
 
 	"github.com/rclone/rclone/librclone/librclone"
+
+	_ "github.com/krustylebot/synchrotron/rclone-bridge/davsync" // Synchrotron server (WebDAV)
 
 	_ "github.com/rclone/rclone/backend/local"       // local filesystem
 	_ "github.com/rclone/rclone/backend/protondrive" // Proton Drive

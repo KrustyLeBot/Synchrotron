@@ -10,6 +10,11 @@ import app.synchrotron.data.PairEntity
 import app.synchrotron.rclone.RcloneEngine
 import app.synchrotron.rclone.RcloneException
 import app.synchrotron.rclone.RemoteEntry
+import app.synchrotron.remote.Backend
+import app.synchrotron.remote.Backends
+import app.synchrotron.remote.ServerConfig
+import app.synchrotron.remote.ServerException
+import app.synchrotron.remote.ServerRemote
 import app.synchrotron.sync.Preview
 import app.synchrotron.sync.Scheduler
 import app.synchrotron.sync.SyncRegistry
@@ -38,6 +43,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _email = MutableStateFlow(engine.username)
     val email: StateFlow<String?> = _email
 
+    private val _backend = MutableStateFlow(Backends.current(app))
+    val backend: StateFlow<Backend> = _backend
+    private val _ready = MutableStateFlow(Backends.ready(app))
+
+    /** The chosen backend can sync (Proton session open, or server settings saved). */
+    val ready: StateFlow<Boolean> = _ready
+    val backendLabel: String get() = _backend.value.label
+    private val server = ServerRemote(app)
+
     /** The pair being created or edited; kept here so the folder pickers can fill it in. */
     val draft = MutableStateFlow(newDraft())
 
@@ -46,8 +60,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshSession() {
+        val ctx: Context = getApplication()
         _loggedIn.value = engine.hasSession
         _email.value = engine.username
+        _backend.value = Backends.current(ctx)
+        _ready.value = Backends.ready(ctx)
+    }
+
+    fun serverConfig(): ServerConfig = Backends.server(getApplication()) ?: ServerConfig()
+
+    /** Returns an error message, or null when the server answered (PROPFIND on its root). */
+    suspend fun testServer(cfg: ServerConfig): String? = try {
+        server.test(cfg)
+        null
+    } catch (e: ServerException) {
+        e.message
+    } catch (e: Exception) {
+        e.message ?: "Connexion impossible"
+    }
+
+    /** Tests then saves the server settings; returns an error message, or null on success. */
+    suspend fun saveServer(cfg: ServerConfig): String? {
+        if (!cfg.complete) return "Adresse, utilisateur et mot de passe sont obligatoires."
+        testServer(cfg)?.let { return it }
+        Backends.saveServer(getApplication(), cfg)
+        refreshSession()
+        return null
+    }
+
+    /** Every pair now syncs with [to]; see [Backends.switch]. Running syncs are stopped first. */
+    fun switchBackend(to: Backend) {
+        progress.value.keys.forEach { SyncRegistry.cancel(it) }
+        Backends.switch(getApplication(), to)
+        refreshSession()
     }
 
     fun observePair(id: Long) = db.pairs().observe(id)
@@ -110,6 +155,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             Scheduler.cancel(ctx, id)
             db.pairs().delete(id)
             File(engine.workDir, "pair-$id").deleteRecursively()
+            Backends.forgetPair(ctx, id)
             WatchService.refresh(ctx)
         }
     }
@@ -119,15 +165,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelSync(id: Long) = SyncRegistry.cancel(id)
 
-    suspend fun preview(pair: PairEntity): Result<Preview> = runCatching { computePreview(engine, pair) }
+    suspend fun preview(pair: PairEntity): Result<Preview> = runCatching { computePreview(getApplication(), engine, pair) }
 
-    /** Sub-folders of a Proton Drive path ("" = root). */
+    /** Sub-folders of a remote path ("" = root). */
     suspend fun remoteDirs(path: String): Result<List<RemoteEntry>> = runCatching {
-        engine.session { engine.listRemoteDirs(path) }
+        when (Backends.current(getApplication())) {
+            Backend.PROTON -> engine.session { engine.listRemoteDirs(path) }
+            Backend.SERVER -> server.listDirs(path)
+        }
     }
 
     suspend fun createRemoteDir(path: String): Result<Unit> = runCatching {
-        engine.session { engine.mkdir(path) }
+        when (Backends.current(getApplication())) {
+            Backend.PROTON -> engine.session { engine.mkdir(path) }
+            Backend.SERVER -> server.mkdir(path)
+        }
     }
 
     /** Plain-text dump of recent sync logs, for the "export logs" button. */

@@ -3,8 +3,10 @@ module github.com/krustylebot/synchrotron/rclone-bridge
 go 1.26.0
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/rclone/rclone v1.75.2
 	golang.org/x/mobile v0.0.0-20260709172247-6129f5bee9d5
+	golang.org/x/net v0.60.0
 )
 
 require (
@@ -35,7 +37,6 @@ require (
 	github.com/go-darwin/apfs v0.0.0-20211011131704-f84b94dbf348 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-resty/resty/v2 v2.17.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gopherjs/gopherjs v1.21.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jtolds/gls v4.20.0+incompatible // indirect
@@ -77,7 +78,6 @@ require (
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
-	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect

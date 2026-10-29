@@ -6,7 +6,7 @@ import app.synchrotron.data.AppDb
 import app.synchrotron.data.PairEntity
 import app.synchrotron.data.SyncMode
 import app.synchrotron.data.SyncStatus
-import app.synchrotron.rclone.RcloneEngine
+import app.synchrotron.remote.Backends
 import app.synchrotron.sync.SyncRegistry
 import java.io.File
 
@@ -36,7 +36,7 @@ object SyncGate {
         }
         val code = when {
             pair == null -> RESULT_NOT_REGISTERED
-            !RcloneEngine.get(context).hasSession -> RESULT_NOT_LOGGED_IN
+            !Backends.ready(context) -> RESULT_NOT_LOGGED_IN
             pair.mode == SyncMode.BIDIRECTIONAL && !pair.initialized -> RESULT_NEEDS_SETUP
             SyncRegistry.isRunning(pair.id) -> RESULT_RUNNING
             // The user's "Wi-Fi only" choice also holds for syncs requested by other apps.

@@ -96,7 +96,7 @@ class MainActivity : FragmentActivity() {
 @Composable
 private fun App(vm: AppViewModel, openPair: MutableStateFlow<Long?>) {
     val nav = rememberNavController()
-    val start = if (vm.engine.hasSession && Environment.isExternalStorageManager()) "home" else "onboarding"
+    val start = if (vm.ready.value && Environment.isExternalStorageManager()) "home" else "onboarding"
     val target by openPair.collectAsState()
 
     LaunchedEffect(target) {
@@ -160,7 +160,7 @@ private fun App(vm: AppViewModel, openPair: MutableStateFlow<Long?>) {
         composable("pick-remote") {
             val draft by vm.draft.collectAsState()
             FolderPicker(
-                title = "Dossier Proton Drive", root = "", initial = draft.remotePath, rootLabel = "Proton Drive",
+                title = "Dossier ${vm.backendLabel}", root = "", initial = draft.remotePath, rootLabel = vm.backendLabel,
                 list = { path ->
                     vm.remoteDirs(path).map { dirs -> dirs.map { FolderItem(it.name, if (path.isEmpty()) it.name else "$path/${it.name}") } }
                 },

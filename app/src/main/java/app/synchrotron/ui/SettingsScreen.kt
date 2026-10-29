@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import app.synchrotron.AppViewModel
 import app.synchrotron.BuildConfig
+import app.synchrotron.remote.Backend
+import androidx.compose.material3.FilterChip
 import app.synchrotron.suite.AboutSettings
 import app.synchrotron.suite.ConfirmDialog
 import app.synchrotron.suite.SectionTitle
@@ -51,18 +53,39 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
     val email by vm.email.collectAsState()
     val loggedIn by vm.loggedIn.collectAsState()
     var confirmLogout by remember { mutableStateOf(false) }
+    val backend by vm.backend.collectAsState()
+    var switchTo by remember { mutableStateOf<Backend?>(null) }
 
     Scaffold(topBar = { BackTopBar("Réglages", onBack) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            SectionTitle("Compte Proton")
+            SectionTitle("Stockage distant")
             SettingsCard {
-                Text(if (loggedIn) email ?: "Connecté" else "Non connecté", fontWeight = FontWeight.SemiBold)
+                Text("Toutes les paires se synchronisent avec :", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    Backend.entries.forEach { b ->
+                        FilterChip(selected = backend == b, onClick = { if (b != backend) switchTo = b }, label = { Text(b.label) })
+                    }
+                }
                 Text(
-                    if (loggedIn) "Session active, chiffrée sur le téléphone." else "Session expirée ou absente.",
+                    "Mêmes dossiers des deux côtés (ex. /Apps/Griffonote). Changer ne supprime rien : la synchro suivante compare les fichiers.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (loggedIn) OutlinedButton(onClick = { confirmLogout = true }) { Text("Se déconnecter") }
-                else Button(onClick = onLogin) { Text("Se reconnecter") }
+            }
+
+            if (backend == Backend.PROTON) {
+                SectionTitle("Compte Proton")
+                SettingsCard {
+                    Text(if (loggedIn) email ?: "Connecté" else "Non connecté", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (loggedIn) "Session active, chiffrée sur le téléphone." else "Session expirée ou absente.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (loggedIn) OutlinedButton(onClick = { confirmLogout = true }) { Text("Se déconnecter") }
+                    else Button(onClick = onLogin) { Text("Se reconnecter") }
+                }
+            } else {
+                SectionTitle("Serveur Synchrotron")
+                SettingsCard { ServerForm(vm) {} }
             }
 
             UpdateSettings(vm.updates)
@@ -128,10 +151,21 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
 
             AboutSettings(
                 "Synchrotron",
-                "Application tierce, non officiellement supportée par Proton. Synchronisation par rclone (backend Proton Drive, en bêta : une évolution côté Proton peut la casser temporairement).",
+                "Application tierce, non officiellement supportée par Proton. Synchronisation par rclone (backend Proton Drive, en bêta : une évolution côté Proton peut la casser temporairement) ou avec ton serveur WebDAV.",
             )
             Gap(32)
         }
+    }
+
+    switchTo?.let { target ->
+        ConfirmDialog(
+            "Passer à ${target.label} ?",
+            "Les paires gardent leurs dossiers et leurs réglages, les apps ne voient aucune différence. " +
+                "Rien n'est supprimé : la prochaine synchro compare les fichiers des deux côtés, copie ce qui manque " +
+                "et garde les deux versions de ce qui diffère." +
+                if (target == Backend.SERVER) " Copie d'abord tes dossiers Proton sur le serveur, dans la même arborescence." else "",
+            "Changer", onConfirm = { vm.switchBackend(target); switchTo = null }, onDismiss = { switchTo = null },
+        )
     }
 
     if (confirmLogout) {

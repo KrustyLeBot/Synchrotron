@@ -3,11 +3,21 @@ package app.synchrotron.sync
 import app.synchrotron.data.PairEntity
 import app.synchrotron.rclone.RcloneEngine
 import app.synchrotron.rclone.RcloneException
+import app.synchrotron.remote.Backend
+import app.synchrotron.remote.Backends
+import app.synchrotron.remote.ServerRemote
 
 data class Preview(val toUpload: Int, val toDownload: Int, val different: Int, val identical: Int)
 
 /** What the very first sync of a pair is going to do, computed by comparing both listings. */
-suspend fun computePreview(engine: RcloneEngine, pair: PairEntity): Preview = engine.session {
+suspend fun computePreview(context: android.content.Context, engine: RcloneEngine, pair: PairEntity): Preview =
+    when (Backends.current(context)) {
+        // The server gives each file's MD5: identical files are told apart exactly, without downloading.
+        Backend.SERVER -> ServerRemote(context).preview(pair, SyncRunner.patterns(pair))
+        Backend.PROTON -> protonPreview(engine, pair)
+    }
+
+private suspend fun protonPreview(engine: RcloneEngine, pair: PairEntity): Preview = engine.session {
     val filter = SyncRunner.filterJson(pair)
     val local = engine.listEntries(pair.localPath, recurse = true, filter = filter)
         .filter { !it.isDir }.associateBy { it.path }

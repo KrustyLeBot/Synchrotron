@@ -151,10 +151,10 @@ fun DetailScreen(vm: AppViewModel, pairId: Long, onEdit: (PairEntity) -> Unit, o
                             style = MaterialTheme.typography.bodySmall,
                         )
                         TextButton(onClick = { confirmWipe = true }) {
-                            Text(if (localEmpty) "Vider aussi Proton" else "Vider aussi le téléphone")
+                            Text(if (localEmpty) "Vider aussi le cloud" else "Vider aussi le téléphone")
                         }
                         TextButton(onClick = { vm.syncNow(p.id, resync = true) }) {
-                            Text(if (localEmpty) "Restaurer depuis Proton" else "Restaurer depuis le téléphone")
+                            Text(if (localEmpty) "Restaurer depuis le cloud" else "Restaurer depuis le téléphone")
                         }
                     }
                 }
@@ -201,16 +201,16 @@ fun DetailScreen(vm: AppViewModel, pairId: Long, onEdit: (PairEntity) -> Unit, o
     if (confirmDelete && p != null) {
         app.synchrotron.suite.ConfirmDialog(
             "Supprimer la paire ?",
-            "Les fichiers restent intacts sur le téléphone et sur Proton Drive ; seule la synchronisation s'arrête.",
+            "Les fichiers restent intacts sur le téléphone et dans le cloud ; seule la synchronisation s'arrête.",
             "Supprimer", onConfirm = { vm.deletePair(p.id); onBack() }, onDismiss = { confirmDelete = false }, destructive = true,
         )
     }
     if (confirmWipe && p != null) {
         val localEmpty = p.lastMessage.startsWith(SyncRunner.MSG_LOCAL_EMPTY)
         app.synchrotron.suite.ConfirmDialog(
-            if (localEmpty) "Vider Proton aussi ?" else "Vider le téléphone aussi ?",
-            if (localEmpty) "Tous les fichiers de /${p.remotePath} sur Proton Drive seront supprimés, comme sur le téléphone."
-            else "Tous les fichiers de ${p.localPath} seront supprimés du téléphone, comme sur Proton Drive.",
+            if (localEmpty) "Vider le cloud aussi ?" else "Vider le téléphone aussi ?",
+            if (localEmpty) "Tous les fichiers de /${p.remotePath} dans le cloud seront supprimés, comme sur le téléphone."
+            else "Tous les fichiers de ${p.localPath} seront supprimés du téléphone, comme dans le cloud.",
             "Supprimer",
             onConfirm = { vm.syncNow(p.id, resync = true, wipe = if (localEmpty) WIPE_REMOTE else WIPE_LOCAL) },
             onDismiss = { confirmWipe = false }, destructive = true,
@@ -242,7 +242,7 @@ private fun FirstSyncCard(preview: Preview?, loading: Boolean, error: String?, o
             when {
                 loading -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
                 preview != null -> {
-                    Text("${preview.toUpload} fichier(s) envoyés vers Proton", fontWeight = FontWeight.Medium)
+                    Text("${preview.toUpload} fichier(s) envoyés vers le cloud", fontWeight = FontWeight.Medium)
                     Text("${preview.toDownload} fichier(s) reçus sur le téléphone", fontWeight = FontWeight.Medium)
                     if (preview.different > 0) Text("${preview.different} fichier(s) différents des deux côtés (les deux versions seront gardées)", fontWeight = FontWeight.Medium)
                     Text("${preview.identical} déjà identiques", style = MaterialTheme.typography.bodySmall)
@@ -279,7 +279,7 @@ private fun ConflictCard(name: String, group: List<ConflictFile>, root: File, co
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(name, fontWeight = FontWeight.SemiBold)
             Text(
-                "Modifié des deux côtés. Garde une version : les autres sont supprimées, ici et sur Proton.",
+                "Modifié des deux côtés. Garde une version : les autres sont supprimées, ici et dans le cloud.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             current?.let { Version("Version actuelle", it) { ConflictResolver.keep(root, group, null) } }
