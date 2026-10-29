@@ -13,6 +13,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -99,7 +102,7 @@ private fun Field(
             {
                 androidx.compose.material3.IconButton(onClick = { shown = !shown }) {
                     androidx.compose.material3.Icon(
-                        if (shown) androidx.compose.material.icons.Icons.Default.VisibilityOff else androidx.compose.material.icons.Icons.Default.Visibility,
+                        if (shown) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                         if (shown) "Masquer" else "Afficher",
                     )
                 }
