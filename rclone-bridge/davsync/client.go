@@ -8,7 +8,9 @@ package davsync
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -19,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Config is how to reach the server. Secrets are never logged.
@@ -235,7 +238,7 @@ func (c *Client) once(ctx context.Context, method, p string, hdr map[string]stri
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-	return nil, statusError(method, p, c.cfg.User, resp)
+	return nil, statusError(method, p, c.cfg.User, fingerprint(c.cfg.Password), resp)
 }
 
 func netError(err error) error {
@@ -251,7 +254,14 @@ func netError(err error) error {
 	return &Error{Kind: KindTransient, Msg: err.Error()}
 }
 
-func statusError(method, p, user string, resp *http.Response) error {
+// fingerprint lets the user compare the password the app holds with the right one (same command on
+// a PC) without showing it: its length and the start of its SHA-256.
+func fingerprint(password string) string {
+	h := sha256.Sum256([]byte(password))
+	return fmt.Sprintf("%d caractères, empreinte %s", utf8.RuneCountInString(password), hex.EncodeToString(h[:])[:6])
+}
+
+func statusError(method, p, user, pwPrint string, resp *http.Response) error {
 	s := resp.StatusCode
 	where := fmt.Sprintf("%s /%s : HTTP %d", method, strings.Trim(p, "/"), s)
 	switch {
@@ -261,7 +271,8 @@ func statusError(method, p, user string, resp *http.Response) error {
 		if resp.Header.Get("WWW-Authenticate") == "" {
 			who = "un intermédiaire (pas le serveur WebDAV : Cloudflare ?)"
 		}
-		return &Error{Kind: KindAuth, Status: s, Msg: fmt.Sprintf("%s refuse l'utilisateur « %s » sur %s (%s)", who, user, resp.Request.URL.Host, where)}
+		return &Error{Kind: KindAuth, Status: s, Msg: fmt.Sprintf("%s refuse l'utilisateur « %s » sur %s (%s ; mot de passe envoyé : %s)",
+			who, user, resp.Request.URL.Host, where, pwPrint)}
 	case s >= 300 && s < 400:
 		loc := resp.Header.Get("Location")
 		if strings.Contains(loc, "cloudflareaccess.com") {
