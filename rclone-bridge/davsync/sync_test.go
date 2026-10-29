@@ -87,6 +87,7 @@ func newServer(t *testing.T) *server {
 			return
 		}
 		if u, p, ok := r.BasicAuth(); !ok || u != "fold6" || p != "pw" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="rclone"`)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -193,8 +194,8 @@ func TestConnection(t *testing.T) {
 	bad := srv.cfg()
 	bad.Password = "nope"
 	c, _ := NewClient(bad)
-	if err := c.Test(ctx); kindOf(err) != KindAuth {
-		t.Fatalf("wrong password: want auth error, got %v", err)
+	if err := c.Test(ctx); kindOf(err) != KindAuth || !strings.Contains(err.Error(), "« fold6 »") {
+		t.Fatalf("wrong password: want auth error naming the user, got %v", err)
 	}
 	bad = srv.cfg()
 	bad.CFSecret = "nope"

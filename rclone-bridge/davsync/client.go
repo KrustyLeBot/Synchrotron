@@ -235,7 +235,7 @@ func (c *Client) once(ctx context.Context, method, p string, hdr map[string]stri
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-	return nil, statusError(method, p, resp)
+	return nil, statusError(method, p, c.cfg.User, resp)
 }
 
 func netError(err error) error {
@@ -251,12 +251,17 @@ func netError(err error) error {
 	return &Error{Kind: KindTransient, Msg: err.Error()}
 }
 
-func statusError(method, p string, resp *http.Response) error {
+func statusError(method, p, user string, resp *http.Response) error {
 	s := resp.StatusCode
 	where := fmt.Sprintf("%s /%s : HTTP %d", method, strings.Trim(p, "/"), s)
 	switch {
 	case s == http.StatusUnauthorized:
-		return &Error{Kind: KindAuth, Status: s, Msg: "identifiants du serveur refusés (" + where + ")"}
+		// The WebDAV server asks for Basic auth; a 401 without that challenge comes from something in between.
+		who := "le serveur WebDAV"
+		if resp.Header.Get("WWW-Authenticate") == "" {
+			who = "un intermédiaire (pas le serveur WebDAV : Cloudflare ?)"
+		}
+		return &Error{Kind: KindAuth, Status: s, Msg: fmt.Sprintf("%s refuse l'utilisateur « %s » sur %s (%s)", who, user, resp.Request.URL.Host, where)}
 	case s >= 300 && s < 400:
 		loc := resp.Header.Get("Location")
 		if strings.Contains(loc, "cloudflareaccess.com") {

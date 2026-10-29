@@ -154,10 +154,10 @@ fun SettingsHint(text: String, color: Color = MaterialTheme.colorScheme.onSurfac
     Text(text, style = MaterialTheme.typography.bodySmall, color = color)
 }
 
-/** "Synchronisation Proton Drive" section: the folder is set up in Synchrotron, the app only asks for syncs. */
+/** "Synchronisation" section: the folder is set up in Synchrotron, the app only asks for syncs. */
 @Composable
 fun SyncSettings(folder: String) {
-    SectionTitle("Synchronisation Proton Drive")
+    SectionTitle("Synchronisation")
     SettingsCard {
         Text("Par Synchrotron", fontWeight = FontWeight.SemiBold)
         SettingsHint(

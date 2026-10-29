@@ -98,7 +98,7 @@ class ServerRemote(private val context: Context) {
         }
 
         fun friendly(kind: String, detail: String): String = when (kind) {
-            "auth" -> "Utilisateur ou mot de passe du serveur refusé."
+            "auth" -> "Utilisateur ou mot de passe du serveur refusé : $detail"
             "access" -> "Accès refusé par Cloudflare : vérifie le Client ID et le Client Secret du service token. ($detail)"
             "offline" -> "Serveur injoignable (NAS éteint ou tunnel coupé) : nouvel essai plus tard."
             "transient" -> "Le serveur a mal répondu : nouvel essai plus tard. ($detail)"

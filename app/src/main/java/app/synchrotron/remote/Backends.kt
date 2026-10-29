@@ -25,7 +25,8 @@ data class ServerConfig(
     val complete: Boolean get() = url.isNotBlank() && user.isNotBlank() && password.isNotEmpty()
 
     fun toJson(): JSONObject = JSONObject()
-        .put("url", url.trim()).put("user", user.trim()).put("password", password)
+        // Pasted or autofilled values often carry a stray space or line break at an end.
+        .put("url", url.trim()).put("user", user.trim()).put("password", password.trim())
         .put("cfId", cfId.trim()).put("cfSecret", cfSecret.trim()).put("lanUrl", lanUrl.trim())
 
     fun toMap() = mapOf("url" to url, "user" to user, "password" to password, "cfId" to cfId, "cfSecret" to cfSecret, "lanUrl" to lanUrl)
