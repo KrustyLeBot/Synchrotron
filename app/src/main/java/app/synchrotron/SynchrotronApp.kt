@@ -16,11 +16,25 @@ class SynchrotronApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Keep the last crash where the settings can show it: without a computer there is no other way to read it.
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                java.io.File(filesDir, CRASH_FILE).writeText(
+                    "${java.util.Date()} · ${thread.name} · build ${BuildConfig.VERSION_NAME}\n" + android.util.Log.getStackTraceString(error).take(6000),
+                )
+            }
+            previous?.uncaughtException(thread, error)
+        }
         // Loading rclone takes a few hundred ms: start now, in parallel with whatever woke the process up.
         RcloneEngine.get(this).warmUp()
         Notifier.createChannels(this)
         UpdateWorker.schedule(this)
         CoroutineScope(Dispatchers.IO).launch { Scheduler.scheduleAll(this@SynchrotronApp) }
         WatchService.refresh(this)
+    }
+
+    companion object {
+        const val CRASH_FILE = "last_crash.txt"
     }
 }

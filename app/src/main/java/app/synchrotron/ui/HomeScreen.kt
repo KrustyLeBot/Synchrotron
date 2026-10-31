@@ -131,10 +131,19 @@ private fun NotificationsBanner() {
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
-    fun openSettings() = context.startActivity(
-        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName),
-    )
+    /** The system's notification settings of the app; its details page if that screen is not there. Never throws. */
+    fun openSettings() {
+        val flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+        val primary = android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(flags)
+        val fallback = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .setData(android.net.Uri.parse("package:${context.packageName}")).addFlags(flags)
+        try {
+            context.startActivity(primary)
+        } catch (_: Exception) {
+            try { context.startActivity(fallback) } catch (_: Exception) {}
+        }
+    }
     val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
         reach = app.synchrotron.notify.Notifier.reach(context)
         if (!granted) openSettings() // refused for good: only the system settings can change it
@@ -145,8 +154,9 @@ private fun NotificationsBanner() {
             title = "Notifications désactivées", icon = Icons.Default.Warning, inset = false,
         ) {
             TextButton(onClick = {
-                if (reach == app.synchrotron.notify.Notifier.Reach.NO_PERMISSION && android.os.Build.VERSION.SDK_INT >= 33) ask.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                else openSettings()
+                if (reach == app.synchrotron.notify.Notifier.Reach.NO_PERMISSION && android.os.Build.VERSION.SDK_INT >= 33) {
+                    try { ask.launch(android.Manifest.permission.POST_NOTIFICATIONS) } catch (_: Exception) { openSettings() }
+                } else openSettings()
             }) { Text("Activer") }
         }
     }

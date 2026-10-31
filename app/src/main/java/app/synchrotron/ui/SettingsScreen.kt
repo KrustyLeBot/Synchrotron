@@ -99,6 +99,24 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
                 OutlinedButton(onClick = { app.synchrotron.notify.Notifier.test(context) }) { Text("Envoyer une notification de test") }
             }
 
+            run {
+                val crashFile = java.io.File(context.filesDir, app.synchrotron.SynchrotronApp.CRASH_FILE)
+                var crash by remember { mutableStateOf(crashFile.takeIf { it.isFile }?.readText()) }
+                crash?.let { text ->
+                    SectionTitle("Dernier plantage")
+                    SettingsCard {
+                        Text(text.take(900), style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = {
+                                val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                                cm.setPrimaryClip(android.content.ClipData.newPlainText("Plantage Synchrotron", text))
+                            }) { Text("Copier") }
+                            OutlinedButton(onClick = { crashFile.delete(); crash = null }) { Text("Effacer") }
+                        }
+                    }
+                }
+            }
+
             UpdateSettings(vm.updates)
 
             SectionTitle("Sécurité")
