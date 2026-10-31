@@ -98,6 +98,20 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
                 )
                 OutlinedButton(onClick = { app.synchrotron.notify.Notifier.test(context) }) { Text("Envoyer une notification de test") }
             }
+            SettingsCard {
+                Text("Notification permanente", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "La notification fixe (surveillance des dossiers) et celle des synchros en cours ont chacune leur canal. " +
+                        "Désactive-les pour ne voir que les alertes d'erreur : la synchronisation continue de fonctionner.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = { app.synchrotron.notify.Notifier.openChannelSettings(context, app.synchrotron.notify.Notifier.CH_WATCH) }) {
+                    Text("Régler la notification permanente")
+                }
+                OutlinedButton(onClick = { app.synchrotron.notify.Notifier.openChannelSettings(context, app.synchrotron.notify.Notifier.CH_PROGRESS) }) {
+                    Text("Régler la notification de synchro en cours")
+                }
+            }
 
             run {
                 val crashFile = java.io.File(context.filesDir, app.synchrotron.SynchrotronApp.CRASH_FILE)

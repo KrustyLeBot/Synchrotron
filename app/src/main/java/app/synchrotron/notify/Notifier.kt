@@ -33,8 +33,27 @@ object Notifier {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CH_PROBLEMS, "Mises à jour", NotificationManager.IMPORTANCE_DEFAULT))
         nm.createNotificationChannel(NotificationChannel(CH_ATTENTION, "Action requise (conflits, synchro bloquée)", NotificationManager.IMPORTANCE_HIGH))
-        nm.createNotificationChannel(NotificationChannel(CH_PROGRESS, "Synchronisation en cours", NotificationManager.IMPORTANCE_LOW))
-        nm.createNotificationChannel(NotificationChannel(CH_WATCH, "Surveillance des dossiers", NotificationManager.IMPORTANCE_MIN))
+        nm.createNotificationChannel(NotificationChannel(CH_PROGRESS, "Synchronisation en cours (temporaire)", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "Affichée seulement pendant qu'une synchro tourne. Tu peux désactiver ce canal : les alertes d'erreur restent sur leur propre canal."
+        })
+        nm.createNotificationChannel(NotificationChannel(CH_WATCH, "Surveillance des dossiers (permanente)", NotificationManager.IMPORTANCE_MIN).apply {
+            description = "La notification qui reste affichée tant que Synchrotron surveille des dossiers. Tu peux désactiver ce canal : la surveillance continue, seules les alertes d'erreur s'affichent."
+        })
+    }
+
+    /** Opens the system page of one channel, where the user can silence it without touching the others. */
+    fun openChannelSettings(context: Context, channel: String) {
+        val intent = Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, channel)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }.onFailure {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
     }
 
     private fun open(context: Context, pairId: Long?): PendingIntent {
