@@ -88,6 +88,17 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
                 SettingsCard { ServerForm(vm) {} }
             }
 
+            SectionTitle("Notifications")
+            SettingsCard {
+                Text("Alertes de synchronisation", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Une notification te prévient quand une synchro est bloquée (trop de suppressions à confirmer, dossier vide), " +
+                        "quand des conflits sont à résoudre ou quand elle échoue. Elle sonne une fois, puis te le rappelle toutes les 6 h si rien n'a changé.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = { app.synchrotron.notify.Notifier.test(context) }) { Text("Envoyer une notification de test") }
+            }
+
             UpdateSettings(vm.updates)
 
             SectionTitle("Sécurité")

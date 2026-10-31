@@ -36,6 +36,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -100,6 +106,7 @@ fun HomeScreen(
                     }
                 }
             }
+            item { NotificationsBanner() }
             if (vm.updates.showBanner) item { UpdateBanner(vm.updates, inset = false) }
             if (pairs.isEmpty()) item { EmptyState() }
             items(pairs, key = { it.id }) { pair ->
@@ -109,6 +116,38 @@ fun HomeScreen(
                     onSync = { if (progress.containsKey(pair.id)) vm.cancelSync(pair.id) else if (pair.initialized || pair.mode != app.synchrotron.data.SyncMode.BIDIRECTIONAL) vm.syncNow(pair.id) else onOpenPair(pair.id) },
                 )
             }
+        }
+    }
+}
+
+/** Without notifications nobody tells the user that a sync is blocked or has conflicts: say so on the home screen. */
+@Composable
+private fun NotificationsBanner() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var reach by remember { mutableStateOf(app.synchrotron.notify.Notifier.reach(context)) }
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) reach = app.synchrotron.notify.Notifier.reach(context) }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    fun openSettings() = context.startActivity(
+        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName),
+    )
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        reach = app.synchrotron.notify.Notifier.reach(context)
+        if (!granted) openSettings() // refused for good: only the system settings can change it
+    }
+    if (reach != app.synchrotron.notify.Notifier.Reach.OK) {
+        SuiteBanner(
+            "Tu ne seras pas prévenu des conflits ni des synchros bloquées (suppressions à confirmer).", tone = Tone.Error,
+            title = "Notifications désactivées", icon = Icons.Default.Warning, inset = false,
+        ) {
+            TextButton(onClick = {
+                if (reach == app.synchrotron.notify.Notifier.Reach.NO_PERMISSION && android.os.Build.VERSION.SDK_INT >= 33) ask.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                else openSettings()
+            }) { Text("Activer") }
         }
     }
 }
