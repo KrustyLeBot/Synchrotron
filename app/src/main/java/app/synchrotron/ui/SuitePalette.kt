@@ -1,4 +1,4 @@
-// Generated: the same recipe in every app of the suite (Synchrotron, Griffonote, Ecoutify, Météorite).
+// Generated: the same recipe in every app of the suite (Synchrotron, Scriptorium, Ecoutify, Météorite).
 package app.synchrotron.ui
 
 import androidx.compose.foundation.shape.RoundedCornerShape

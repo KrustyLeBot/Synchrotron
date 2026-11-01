@@ -67,7 +67,7 @@ fun SettingsScreen(vm: AppViewModel, onLogin: () -> Unit, onLoggedOut: () -> Uni
                     }
                 }
                 Text(
-                    "Mêmes dossiers des deux côtés (ex. /Apps/Griffonote). Changer ne supprime rien : la synchro suivante compare les fichiers.",
+                    "Mêmes dossiers des deux côtés (ex. /Apps/Scriptorium). Changer ne supprime rien : la synchro suivante compare les fichiers.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
