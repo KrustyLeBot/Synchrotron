@@ -79,7 +79,7 @@ DAVSYNC_RCLONE=/path/to/rclone go test -run Real ./davsync/            # against
 | `app.synchrotron.action.SYNC_FINISHED` (broadcast) | `pair_id`, `status`, `changes` (+`local_path` for the requesting app) | Sent after each sync. |
 
 ```kotlin
-SynchrotronClient.registerFolder(context, notesDir.path, "Scriptorium")
+SynchrotronClient.registerFolder(context, notesDir.path, "Mémento")
 SynchrotronClient.syncNow(context, notesDir.path)
 val stop = SynchrotronClient.onSyncFinished(context) { reload() }
 ```
@@ -91,7 +91,7 @@ Synchrotron is the sync hub of a small suite of personal apps, built the same wa
 | App | Accent | Local folder (Android) | Remote folder | Windows |
 |---|---|---|---|---|
 | Synchrotron | violet `#6D4AFF` | — | — | — |
-| Scriptorium (notes, agenda, contacts, activities) | amber `#F9A825` | folder chosen in the app | `Apps/Scriptorium` | the folder synced by Proton's client, or the server's share over SMB |
+| Mémento (notes, agenda, contacts, activities) | amber `#F9A825` | folder chosen in the app | `Apps/Mémento` | the folder synced by Proton's client, or the server's share over SMB |
 | Ecoutify (music) | teal `#1AAE9F` | `Ecoutify/` | `Apps/Ecoutify` | same |
 | Météorite (weather) | blue `#2563EB` | `Documents/Meteorite/` | `Apps/Meteorite` | — |
 | PersonalDashboard | — | `Documents/PersonalDashboard/` | `Apps/PersonalDashboard` | same |

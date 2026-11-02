@@ -50,7 +50,7 @@ fun EditScreen(vm: AppViewModel, onPickLocal: () -> Unit, onPickRemote: () -> Un
     Scaffold(topBar = { BackTopBar(if (d.id == 0L) "Nouvelle paire" else "Modifier la paire", onBack) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
             OutlinedTextField(d.name, { vm.draft.value = d.copy(name = it) }, label = { Text("Nom") },
-                placeholder = { Text("ex. Notes Scriptorium") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                placeholder = { Text("ex. Notes Mémento") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Gap()
             FolderRow(Icons.Default.Folder, "Téléphone", d.localPath.ifBlank { "Choisir un dossier" }, onPickLocal)
             Gap(8)

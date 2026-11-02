@@ -204,7 +204,7 @@ fun AboutSettings(appName: String, description: String) {
     SettingsCard {
         Text(appName, fontWeight = FontWeight.SemiBold)
         SettingsHint(description)
-        SettingsHint("Fait partie de la suite Synchrotron · Scriptorium · Ecoutify · Météorite.")
+        SettingsHint("Fait partie de la suite Synchrotron · Mémento · Ecoutify · Météorite.")
     }
 }
 
